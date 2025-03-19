@@ -1,0 +1,20 @@
+# Bun files
+node_modules/
+.bun
+
+# Environment variables
+.env
+
+# SQLite database
+*.sqlite
+*.db
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+*.swo 

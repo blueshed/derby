@@ -1,0 +1,20 @@
+{
+    "name": "derby",
+    "version": "1.0.0",
+    "description": "SQL query API server with HTTP and WebSocket interfaces",
+    "main": "index.js",
+    "type": "module",
+    "scripts": {
+        "start": "bun run index.js",
+        "test": "bun test tests/",
+        "test:http": "bun test tests/http.test.js",
+        "test:ws": "bun test tests/websocket.test.js",
+        "test:db": "bun test tests/test.test.js"
+    },
+    "dependencies": {
+        "bun": "^1.0.0"
+    },
+    "devDependencies": {
+        "bun-types": "latest"
+    }
+}
