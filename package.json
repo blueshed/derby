@@ -1,6 +1,6 @@
 {
     "name": "derby",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "A lightweight web application framework for Bun with SQL-first approach and JSON-RPC over WebSockets",
     "main": "src/index.js",
     "type": "module",
@@ -19,15 +19,13 @@
         "bun": ">=1.0.0"
     },
     "scripts": {
-        "start": "bun --watch index.js",
+        "start": "bun --watch src/index.js",
         "test": "bun test tests/",
         "test:server": "bun test tests/basic-server.test.js",
-        "client": "cd client && bun run dev",
-        "test:http": "bun test tests/http.test.js",
-        "test:ws": "bun test tests/websocket.test.js",
-        "test:db": "bun test tests/test.test.js",
-        "test:isolated": "DATABASE_URL=sqlite:///./test_derby.sqlite SQL_DIR=sql bun test tests/",
-        "test-jsonrpc": "bun run test-jsonrpc.js"
+        "test:sqlite": "bun test tests/sqlite-adapter.test.js",
+        "example": "bun examples/basic-server.js",
+        "example:client": "bun examples/websocket-client.js",
+        "lint": "prettier --write src/**/*.js"
     },
     "dependencies": {
         "bun": "^1.0.0"

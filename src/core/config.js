@@ -12,7 +12,8 @@ export const defaultConfig = {
         type: "sqlite",
         connectionString: process.env.DATABASE_URL || "file:derby.db",
         sqlPath: process.env.SQL_PATH || join(process.cwd(), "sql"),
-        logSql: process.env.LOG_SQL === "true"
+        logSql: process.env.LOG_SQL === "true",
+        disableCache: process.env.DB_CACHE_ENABLED !== "true" // Load from disk by default unless explicitly enabled
     },
 
     // Static file settings

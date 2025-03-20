@@ -6,12 +6,24 @@ import { createPostgresAdapter } from "../adapters/postgres.js";
 // Internal cache for named SQL queries
 const queryCache = new Map();
 
+// Store a reference to the SQL path for reloading
+let globalSqlPath = null;
+let disableCaching = false;
+
 /**
  * Setup database based on configuration
  * @param {Object} config - Database configuration
  * @returns {Object} Database adapter
  */
 export async function setupDatabase(config) {
+    // Store the SQL path and caching flag globally
+    globalSqlPath = config.sqlPath;
+    disableCaching = config.disableCache;
+
+    if (disableCaching) {
+        console.log("SQL query caching is disabled - queries will be loaded from disk on each execution");
+    }
+
     // Create adapter based on database type
     let adapter;
 
@@ -173,6 +185,25 @@ async function executeMigrations(db, sqlFiles, logSql = false) {
 }
 
 /**
+ * Load SQL file directly from disk
+ * @param {string} name - Name of the query
+ * @returns {Promise<string>} SQL content
+ */
+async function loadSqlFromDisk(name) {
+    if (!globalSqlPath) {
+        throw new Error("SQL path not configured");
+    }
+
+    const filePath = join(globalSqlPath, `${name}.sql`);
+    try {
+        return await readFile(filePath, "utf-8");
+    } catch (error) {
+        console.error(`Error loading SQL file ${filePath}:`, error);
+        throw new Error(`Query '${name}' not found`);
+    }
+}
+
+/**
  * Execute a named SQL query
  * @param {string} name - Name of the query
  * @param {Object} params - Query parameters
@@ -180,19 +211,35 @@ async function executeMigrations(db, sqlFiles, logSql = false) {
  * @returns {Object} Query result
  */
 export async function executeNamedQuery(name, params = {}, db) {
-    // Check if query exists
-    if (!queryCache.has(name)) {
-        return {
-            success: false,
-            status: 404,
-            error: `Query '${name}' not found`
-        };
+    let sql;
+
+    if (disableCaching) {
+        // When caching is disabled, load the SQL file directly from disk
+        try {
+            sql = await loadSqlFromDisk(name);
+        } catch (error) {
+            return {
+                success: false,
+                status: 404,
+                error: error.message
+            };
+        }
+    } else {
+        // Use the cached version
+        // Check if query exists
+        if (!queryCache.has(name)) {
+            return {
+                success: false,
+                status: 404,
+                error: `Query '${name}' not found`
+            };
+        }
+
+        // Get query from cache
+        sql = queryCache.get(name);
     }
 
     try {
-        // Get query from cache
-        const sql = queryCache.get(name);
-
         // Execute query
         const result = await db.executeQuery(sql, params);
 

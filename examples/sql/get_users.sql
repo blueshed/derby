@@ -15,13 +15,5 @@ WHERE
   (:search IS NULL OR name LIKE '%' || :search || '%')
 ORDER BY 
   id ASC
-LIMIT 
-  CASE 
-    WHEN :limit IS NULL THEN 10 
-    ELSE :limit 
-  END
-OFFSET 
-  CASE 
-    WHEN :offset IS NULL THEN 0 
-    ELSE :offset 
-  END; 
+LIMIT  COALESCE(:limit, 10)
+OFFSET COALESCE(:offset, 0); 

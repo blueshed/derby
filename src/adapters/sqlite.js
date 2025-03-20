@@ -9,8 +9,23 @@ import { createBaseAdapter } from "./base.js";
  */
 function sqliteTransformer(sql, params) {
     // SQLite uses named parameters with : prefix
-    // We don't need to transform anything since it matches our format
-    return { sql, params };
+    // Transform parameter names to add : prefix if missing
+    const transformedParams = {};
+
+    for (const [key, value] of Object.entries(params)) {
+        // If key already starts with :, use it as is
+        if (key.startsWith(':')) {
+            transformedParams[key] = value;
+        } else {
+            // Otherwise add the : prefix
+            transformedParams[`:${key}`] = value;
+        }
+    }
+
+    return {
+        sql,
+        params: transformedParams
+    };
 }
 
 /**
@@ -68,48 +83,21 @@ export function createSqliteAdapter(connectionString) {
                 throw new Error("Database not initialized");
             }
 
+            // Apply parameter transformation
+            const { params: transformedParams } = sqliteTransformer(sql, params);
+
             try {
-                // Check if SQL contains multiple statements
-                if (sql.includes(';') && sql.trim().split(';').filter(s => s.trim()).length > 1) {
-                    // Multi-statement case
-                    const statements = sql.split(';').filter(s => s.trim());
-                    let results = [];
-
-                    for (const statement of statements) {
-                        if (!statement.trim()) continue;
-
-                        try {
-                            let result;
-                            if (Object.keys(params).length > 0) {
-                                const stmt = this.db.prepare(statement);
-                                result = stmt.all(params);
-                            } else {
-                                result = this.db.query(statement).all();
-                            }
-
-                            if (result && result.length > 0) {
-                                results = result;
-                            }
-                        } catch (err) {
-                            console.warn(`Statement error: ${err.message}`);
-                            // Continue to next statement
-                        }
-                    }
-
-                    return results;
-                } else {
-                    // Single statement
-                    if (Object.keys(params).length > 0) {
-                        try {
-                            const stmt = this.db.prepare(sql);
-                            return stmt.all(params);
-                        } catch (err) {
-                            console.warn(`Parameter binding error: ${err.message}`);
-                            return this.db.query(sql).all();
-                        }
-                    } else {
+                // Single statement case (the simple path)
+                if (Object.keys(transformedParams).length > 0) {
+                    try {
+                        const stmt = this.db.prepare(sql);
+                        return stmt.all(transformedParams);
+                    } catch (err) {
+                        console.warn(`Parameter binding error: ${err.message}`);
                         return this.db.query(sql).all();
                     }
+                } else {
+                    return this.db.query(sql).all();
                 }
             } catch (error) {
                 console.error("SQLite query error:", error);

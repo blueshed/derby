@@ -86,7 +86,7 @@
             output.textContent = 'Loading...';
 
             try {
-                const response = await fetch('/api/get_users?limit=10&offset=0');
+                const response = await fetch('/api/get_users?limit=2&offset=0');
                 const data = await response.json();
                 output.textContent = JSON.stringify(data, null, 2);
             } catch (error) {

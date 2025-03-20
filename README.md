@@ -251,6 +251,31 @@ const server = await createServer({
 server.start();
 ```
 
+## Advanced Configuration
+
+### SQL Caching
+
+By default, Derby loads SQL queries directly from disk on each execution, which ensures changes to SQL files are immediately reflected without server restarts during development.
+
+For production environments, you can enable SQL caching for better performance:
+
+```javascript
+// Enable SQL caching for performance in production
+const server = await derby({
+  database: {
+    // ... other database options
+    disableCache: false // Enable SQL caching
+  }
+});
+```
+
+You can also configure this through the `DB_CACHE_ENABLED` environment variable:
+
+```bash
+# For production
+DB_CACHE_ENABLED=true bun run server.js
+```
+
 ## License
 
 MIT

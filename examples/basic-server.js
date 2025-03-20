@@ -1,44 +1,48 @@
+#!/usr/bin/env bun
 import derby from '../src/index.js';
+import { join } from "path";
 
 /**
  * Basic Derby server example
  */
 async function main() {
     try {
-        // Get port from environment variable or use default
-        const port = parseInt(process.env.PORT || "3001", 10);
-
-        // Create a Derby server with custom configuration
-        const server = await derby({
-            port: port,
+        // Example server configuration
+        const config = {
+            port: process.env.PORT || 3001,
             database: {
-                type: 'sqlite',
-                connectionString: 'file:derby-example.db',
-                sqlPath: './examples/sql',
-                logSql: true
+                type: "sqlite",
+                connectionString: "file:" + join(process.cwd(), "derby-example.db"),
+                sqlPath: join(process.cwd(), "examples/sql"),
+                logSql: true,
+                // To enable SQL caching for performance in production:
+                // disableCache: false
             },
-            staticDir: './examples/public',
+            staticDir: join(process.cwd(), "examples/public"),
             cors: {
                 enabled: true
             },
             websocket: {
                 methods: {
-                    // Custom WebSocket method
-                    'hello': async (params) => {
-                        const name = params?.name || 'World';
-                        return { message: `Hello, ${name}!`, timestamp: new Date().toISOString() };
+                    // Example custom WebSocket method
+                    hello: async (params) => {
+                        return {
+                            message: `Hello, ${params.name || 'World'}!`,
+                            timestamp: new Date().toISOString()
+                        };
                     }
                 }
             }
-        });
+        };
 
-        // Start the server
-        server.start();
+        // Create and start the server
+        console.log("Starting server with configuration:", config);
+        const server = await derby(config);
+        await server.start();
 
-        console.log('\nTry these endpoints:');
-        console.log(`- HTTP API: http://localhost:${port}/api/get_users`);
-        console.log(`- Static files: http://localhost:${port}/`);
-        console.log(`- WebSocket: ws://localhost:${port} (use the client in examples/websocket-client.js)\n`);
+        console.log(`Server running at http://localhost:${config.port}`);
+        console.log(`WebSocket available at ws://localhost:${config.port}`);
+        console.log("Press Ctrl+C to stop");
 
         // Show how to access server components
         console.log('Server components available:');
@@ -53,7 +57,7 @@ async function main() {
             process.exit(0);
         });
     } catch (error) {
-        console.error('Error starting server:', error);
+        console.error("Error starting server:", error);
         process.exit(1);
     }
 }
