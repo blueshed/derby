@@ -62,12 +62,25 @@ export async function setupDatabase(config) {
  */
 async function createMigrationsTable(db) {
     try {
-        const createTableSQL = `
-            CREATE TABLE IF NOT EXISTS _migrations (
-                name TEXT PRIMARY KEY,
-                executed_at TEXT NOT NULL
-            )
-        `;
+        let createTableSQL;
+
+        // Use different SQL based on the database type
+        if (db.type === 'postgres') {
+            createTableSQL = `
+                CREATE TABLE IF NOT EXISTS _migrations (
+                    name TEXT PRIMARY KEY,
+                    executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            `;
+        } else {
+            // SQLite and other databases
+            createTableSQL = `
+                CREATE TABLE IF NOT EXISTS _migrations (
+                    name TEXT PRIMARY KEY,
+                    executed_at TEXT NOT NULL
+                )
+            `;
+        }
 
         await db.executeQuery(createTableSQL);
         console.log("Migrations table ready");
@@ -168,11 +181,19 @@ async function executeMigrations(db, sqlFiles, logSql = false) {
             console.log(`Executing migration: ${migration.name}`);
             await db.executeQuery(migration.sql);
 
-            // Record migration execution
-            await db.executeQuery(
-                "INSERT INTO _migrations (name, executed_at) VALUES (:name, datetime('now'))",
-                { name: migration.name }
-            );
+            // Record migration execution - use different SQL based on database type
+            if (db.type === 'postgres') {
+                await db.executeQuery(
+                    "INSERT INTO _migrations (name) VALUES ($1)",
+                    { name: migration.name }
+                );
+            } else {
+                // SQLite and other databases
+                await db.executeQuery(
+                    "INSERT INTO _migrations (name, executed_at) VALUES (:name, datetime('now'))",
+                    { name: migration.name }
+                );
+            }
 
             executedCount++;
         }

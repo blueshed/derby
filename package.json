@@ -1,6 +1,6 @@
 {
     "name": "derby",
-    "version": "0.1.2",
+    "version": "0.2.0",
     "description": "A lightweight web application framework for Bun with SQL-first approach and JSON-RPC over WebSockets",
     "main": "src/index.js",
     "type": "module",
@@ -26,6 +26,7 @@
         "test:postgres": "bun test tests/postgres-adapter.test.js",
         "example": "bun examples/basic-server.js",
         "example:client": "bun examples/websocket-client.js",
+        "example:postgres": "bun examples/postgres-server.js",
         "lint": "prettier --write src/**/*.js"
     },
     "dependencies": {

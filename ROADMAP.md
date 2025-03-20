@@ -12,21 +12,22 @@ Derby follows [Semantic Versioning](https://semver.org/) (SemVer):
 
 ## Current Version
 
-**0.1.0** - Initial release with core functionality:
+**0.2.0** - PostgreSQL support added:
 - [x] HTTP API for SQL query execution
 - [x] WebSocket JSON-RPC 2.0 interface
 - [x] SQLite database support
 - [x] Static file serving
-- [ ] PostgreSQL adapter (stub implementation available, full implementation pending)
+- [x] PostgreSQL adapter with full implementation
+- [x] Transaction support for all database adapters
 
 ## Roadmap
 
 ### Short Term (v0.2.x)
 
-- [ ] Full PostgreSQL implementation
+- [x] Full PostgreSQL implementation
 - [ ] Enhanced logging with configurable levels
 - [ ] Rate limiting and request throttling
-- [ ] Database connection pooling
+- [x] Database connection pooling
 - [ ] More examples and documentation
 - [ ] API authentication middleware
 - [ ] Support for SQL migrations with versioning
@@ -59,7 +60,7 @@ Derby follows [Semantic Versioning](https://semver.org/) (SemVer):
 - [ ] Comprehensive documentation and examples
 - [ ] Stable API with no planned breaking changes
 - [ ] Production-ready with multiple real-world applications
-- [ ] Full PostgreSQL support
+- [x] Full PostgreSQL support
 - [ ] Robust error handling and logging
 - [ ] Security features (authentication, rate limiting, etc.)
 

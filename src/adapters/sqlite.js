@@ -47,6 +47,9 @@ export function createSqliteAdapter(connectionString) {
     return {
         ...adapter,
 
+        // Set the database type
+        type: 'sqlite',
+
         // SQLite database instance
         db: null,
 

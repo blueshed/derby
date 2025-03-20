@@ -8,7 +8,7 @@ A lightweight web application framework for Bun with a SQL-first approach and JS
 - **JSON-RPC 2.0 WebSockets**: Standardized communication protocol with proper error handling
 - **HTTP API**: RESTful endpoints for traditional web applications
 - **Static File Serving**: Serve your SPA or static website
-- **Multiple Database Support**: SQLite (built-in) and PostgreSQL (adapter provided)
+- **Multiple Database Support**: SQLite (built-in) and PostgreSQL support
 - **Simple Configuration**: Environment variables or programmatic configuration
 - **Zero Dependencies**: Built on Bun's native capabilities
 
@@ -81,8 +81,9 @@ import derby from 'derby';
 const server = await derby({
   port: 8080,
   database: {
-    type: 'sqlite',
-    connectionString: 'file:myapp.db',
+    type: 'sqlite',  // or 'postgres'
+    connectionString: 'file:myapp.db', // For SQLite
+    // connectionString: 'postgres://username:password@localhost:5432/database', // For PostgreSQL
     sqlPath: './queries',
     logSql: true
   },
@@ -95,6 +96,46 @@ const server = await derby({
 });
 
 server.start();
+```
+
+## Database Support
+
+Derby supports multiple database backends through the adapter pattern:
+
+### SQLite
+
+SQLite is supported out of the box and is the default database:
+
+```javascript
+const server = await derby({
+  database: {
+    type: 'sqlite',
+    connectionString: 'file:myapp.db', // or ':memory:' for in-memory database
+  }
+});
+```
+
+### PostgreSQL
+
+PostgreSQL support is provided through Bun's built-in SQL module:
+
+```javascript
+const server = await derby({
+  database: {
+    type: 'postgres',
+    connectionString: 'postgres://username:password@localhost:5432/database',
+  }
+});
+```
+
+PostgreSQL connection can also be configured via environment variables:
+
+```
+PGHOST=localhost
+PGPORT=5432
+PGUSERNAME=postgres
+PGPASSWORD=yourpassword
+PGDATABASE=yourdatabase
 ```
 
 ## Custom WebSocket Methods
