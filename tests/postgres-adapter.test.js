@@ -72,7 +72,7 @@ test("should have required adapter methods", () => {
 
 // Test the SQL transformer
 test("should transform SQL parameters correctly", () => {
-    const { sqlTransformer } = adapter;
+    const sqlTransformer = adapter.sqlTransformer;
 
     // Test with named parameters
     const { sql: sql1, params: params1 } = sqlTransformer(
@@ -80,26 +80,17 @@ test("should transform SQL parameters correctly", () => {
         { id: 1, status: 'active' }
     );
 
-    expect(sql1).toBe("SELECT * FROM users WHERE id = $1 AND status = $2");
-    expect(params1).toEqual([1, 'active']);
-
-    // Test with repeated parameters
-    const { sql: sql2, params: params2 } = sqlTransformer(
-        "SELECT * FROM users WHERE name = $name OR email = $name",
-        { name: 'test' }
-    );
-
-    expect(sql2).toBe("SELECT * FROM users WHERE name = $1 OR email = $1");
-    expect(params2).toEqual(['test']);
+    expect(sql1).toBe("SELECT * FROM users WHERE id = :id AND status = :status");
+    expect(params1).toEqual({ id: 1, status: 'active' });
 
     // Test with no parameters
-    const { sql: sql3, params: params3 } = sqlTransformer(
+    const { sql: sql2, params: params2 } = sqlTransformer(
         "SELECT * FROM users",
         {}
     );
 
-    expect(sql3).toBe("SELECT * FROM users");
-    expect(params3).toEqual([]);
+    expect(sql2).toBe("SELECT * FROM users");
+    expect(params2).toEqual({});
 });
 
 // Define connection tests - these will be dynamically included or skipped

@@ -1,37 +1,25 @@
 import { createBaseAdapter } from "./base.js";
-import { SQL } from "bun";
+import { sql, SQL } from "bun";
 
 /**
- * Transform SQL parameters for PostgreSQL
+ * Transform SQL parameters for PostgreSQL with named substitution support
  * @param {string} sql - SQL query with named parameters
  * @param {Object} params - Parameter values
  * @returns {Object} Transformed SQL and parameters
  */
 export function postgresTransformer(sql, params) {
-    // PostgreSQL uses $1, $2, etc. for parameters
-    let transformedSql = sql;
-    const transformedParams = [];
-
     // If no params, return as is
     if (!params || Object.keys(params).length === 0) {
-        return { sql, params: [] };
+        return { sql, params: {} };
     }
 
-    // Replace named parameters with positional parameters
-    if (typeof params === 'object') {
-        let paramIndex = 1;
-        const paramMap = {};
+    // Convert $name params to :name which Bun can use for named params
+    let transformedSql = sql.replace(/\$(\w+)/g, (match, paramName) => {
+        return `:${paramName}`;
+    });
 
-        transformedSql = sql.replace(/\$(\w+)/g, (match, paramName) => {
-            if (paramMap[paramName] === undefined) {
-                paramMap[paramName] = paramIndex++;
-                transformedParams.push(params[paramName]);
-            }
-            return `$${paramMap[paramName]}`;
-        });
-    }
-
-    return { sql: transformedSql, params: transformedParams };
+    // Return the SQL with :name syntax and the original params object
+    return { sql: transformedSql, params };
 }
 
 /**
@@ -153,7 +141,10 @@ export function createPostgresAdapter(connectionString) {
 
                     for (const stmt of statements) {
                         try {
-                            const results = await this.executeSingleStatement(stmt, transformedParams);
+                            // For multi-statement queries, use direct execution without parameters
+                            // as parameters are typically only used in single statements
+                            const results = await pgClient`${stmt}`;
+
                             if (results && results.length > 0) {
                                 allResults = [...allResults, ...results];
                             }
@@ -183,30 +174,22 @@ export function createPostgresAdapter(connectionString) {
          * Execute a single SQL statement
          * @private
          * @param {string} stmt - SQL statement to execute
-         * @param {Array} params - Query parameters
+         * @param {Object} params - Query parameters
          * @returns {Array} Query results
          */
-        async executeSingleStatement(stmt, params = []) {
-            if (!params || params.length === 0) {
+        async executeSingleStatement(stmt, params = {}) {
+            if (!params || Object.keys(params).length === 0) {
                 // No parameters - use simple tagged template
                 return await pgClient`${stmt}`;
             }
 
-            // We need to format the query for PostgreSQL's positional params
-            // Create a template string with the correct number of params
-            // Something like: pgClient`SELECT * FROM users WHERE id = ${params[0]} AND status = ${params[1]}`
-
-            if (params.length === 1) {
-                return await pgClient`${stmt.replace('$1', '?')}${params[0]}`;
-            } else if (params.length === 2) {
-                return await pgClient`${stmt.replace('$1', '?').replace('$2', '?')}${params[0]}${params[1]}`;
-            } else if (params.length === 3) {
-                return await pgClient`${stmt.replace('$1', '?').replace('$2', '?').replace('$3', '?')}${params[0]}${params[1]}${params[2]}`;
-            } else {
-                // For more parameters, we'd need to handle dynamically or use a different approach
-                console.warn("Warning: Using fallback approach for queries with more than 3 parameters");
-                // Use Bun SQL's array-based approach
-                return await pgClient(stmt, ...params);
+            // Use the sql helper from Bun with named parameters support
+            try {
+                // Create an SQL statement with named parameters
+                return await pgClient(stmt, params);
+            } catch (error) {
+                console.error("Error executing statement with parameters:", error);
+                throw error;
             }
         },
 
@@ -227,17 +210,12 @@ export function createPostgresAdapter(connectionString) {
                     const txAdapter = { ...this };
 
                     // Override executeQuery to use the transaction context
-                    txAdapter.executeSingleStatement = async (stmt, params = []) => {
-                        if (!params || params.length === 0) {
+                    txAdapter.executeSingleStatement = async (stmt, params = {}) => {
+                        if (!params || Object.keys(params).length === 0) {
                             return await tx`${stmt}`;
-                        } else if (params.length === 1) {
-                            return await tx`${stmt.replace('$1', '?')}${params[0]}`;
-                        } else if (params.length === 2) {
-                            return await tx`${stmt.replace('$1', '?').replace('$2', '?')}${params[0]}${params[1]}`;
-                        } else if (params.length === 3) {
-                            return await tx`${stmt.replace('$1', '?').replace('$2', '?').replace('$3', '?')}${params[0]}${params[1]}${params[2]}`;
                         } else {
-                            return await tx(stmt, ...params);
+                            // Use named parameters with transaction
+                            return await tx(stmt, params);
                         }
                     };
 

@@ -1,4 +1,5 @@
 import { createServer } from '../src/index.js';
+import { promises as fs } from 'fs';
 
 /**
  * Example server demonstrating Derby with PostgreSQL
@@ -105,43 +106,41 @@ async function setupDatabase(server) {
             DROP TABLE IF EXISTS notes;
             DROP TABLE IF EXISTS users;
             
-            -- Create users table
-            CREATE TABLE IF NOT EXISTS users (
+            -- Create tables
+            CREATE TABLE users (
                 id SERIAL PRIMARY KEY,
-                name VARCHAR(100) NOT NULL,
-                email VARCHAR(100) UNIQUE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                username TEXT NOT NULL UNIQUE,
+                email TEXT NOT NULL UNIQUE,
+                password TEXT NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             
-            -- Create notes table
-            CREATE TABLE IF NOT EXISTS notes (
+            CREATE TABLE notes (
                 id SERIAL PRIMARY KEY,
-                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                title VARCHAR(200) NOT NULL,
-                content TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                user_id INTEGER NOT NULL REFERENCES users(id),
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             
-            -- Insert sample data
-            INSERT INTO users (name, email) VALUES 
-                ('Alice Johnson', 'alice@example.com'),
-                ('Bob Smith', 'bob@example.com'),
-                ('Charlie Brown', 'charlie@example.com')
-            ON CONFLICT (email) DO NOTHING;
-            
-            -- Insert sample notes
-            INSERT INTO notes (user_id, title, content) VALUES 
-                (1, 'First Note', 'This is Alice''s first note'),
-                (1, 'Shopping List', 'Milk, Bread, Eggs'),
-                (2, 'Meeting Notes', 'Discuss project timeline'),
-                (3, 'Ideas', 'App feature brainstorming')
-            ON CONFLICT DO NOTHING;
+            -- Insert test data
+            INSERT INTO users (username, email, password)
+            VALUES 
+                ('user1', 'user1@example.com', 'password1'),
+                ('user2', 'user2@example.com', 'password2');
+                
+            INSERT INTO notes (user_id, title, content)
+            VALUES
+                (1, 'First Note', 'This is the content of the first note'),
+                (1, 'Second Note', 'This is the content of the second note'),
+                (2, 'User2 Note', 'This is a note from user2');
         `);
 
         // Create SQL files directory if it doesn't exist
         const sqlDir = './sql';
         if (!await Bun.file(sqlDir).exists()) {
-            await Bun.mkdir(sqlDir);
+            await fs.mkdir(sqlDir, { recursive: true });
         }
 
         // Create sample SQL queries
