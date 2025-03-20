@@ -9,7 +9,8 @@
         "test": "bun test tests/",
         "test:http": "bun test tests/http.test.js",
         "test:ws": "bun test tests/websocket.test.js",
-        "test:db": "bun test tests/test.test.js"
+        "test:db": "bun test tests/test.test.js",
+        "test:isolated": "DATABASE_URL=sqlite:///./test_derby.sqlite SQL_DIR=sql bun test tests/"
     },
     "dependencies": {
         "bun": "^1.0.0"

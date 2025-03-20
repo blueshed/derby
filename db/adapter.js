@@ -148,24 +148,16 @@ function createBaseAdapter() {
         // Record a migration as applied
         async recordMigration(migrationName) {
             console.log(`Recording migration in database: ${migrationName}`);
-
+            const migrationNameStr = String(migrationName);
             try {
-                // Cast migrationName to String to ensure proper type handling
-                const migrationNameStr = String(migrationName);
-
-                // Use parameterized query with explicit String casting
-                await this.executeQuery(
-                    "INSERT INTO _migrations (name) VALUES ($name)",
-                    { name: migrationNameStr }
+                const result = await this.executeQuery(
+                    "INSERT INTO _migrations (name) VALUES ($name) RETURNING name, applied_at",
+                    { $name: migrationNameStr }
                 );
 
-                // Verify the insertion worked
-                const verification = await this.executeQuery(
-                    "SELECT name FROM _migrations WHERE name = $name",
-                    { name: migrationNameStr }
-                );
+                console.log("Insert result:", result);
 
-                if (verification.length === 0) {
+                if (result.length === 0) {
                     console.error(`Warning: Failed to record migration ${migrationNameStr} in database`);
                 } else {
                     console.log(`Successfully recorded migration: ${migrationNameStr}`);
@@ -264,6 +256,29 @@ function createSqliteAdapter(connectionString) {
 
     // Override with SQLite-specific implementations
     adapter.executeQuery = async (sqlQuery, params) => {
+        // For migration files with multiple statements, split and execute each one
+        if (sqlQuery.includes(';') && Object.keys(params).length === 0) {
+            console.log("Executing multi-statement SQL query");
+            const statements = sqlQuery.split(';').filter(stmt => stmt.trim());
+            let results = [];
+
+            for (const statement of statements) {
+                if (statement.trim()) {
+                    console.log(`Executing statement: ${statement.trim().substring(0, 60)}${statement.length > 60 ? '...' : ''}`);
+                    try {
+                        const result = db.query(statement).all();
+                        results.push(result);
+                    } catch (error) {
+                        console.error(`Error executing statement: ${statement.trim()}`);
+                        console.error(error);
+                        throw error;
+                    }
+                }
+            }
+            return results.flat();
+        }
+
+        // Standard query execution for single statements
         const hasParams = Object.keys(params).length > 0;
         if (hasParams) {
             console.log("Executing SQLite query with parameters:", params);

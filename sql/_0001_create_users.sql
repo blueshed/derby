@@ -14,11 +14,14 @@ CREATE TABLE IF NOT EXISTS users (
 -- Create index on email
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
--- Insert sample data if table is empty
-INSERT INTO users (email, password, given_name, family_name, permission)
-SELECT 'admin@example.com', 'admin_password', 'Admin', 'User', 'admin'
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'admin@example.com');
+-- Insert sample data using direct inserts (more reliable than conditional inserts)
+-- First delete any existing test users to avoid conflicts
+DELETE FROM users WHERE email IN ('admin@example.com', 'user@example.com');
 
-INSERT INTO users (email, password, given_name, family_name)
-SELECT 'user@example.com', 'user_password', 'Test', 'User'
-WHERE NOT EXISTS (SELECT 1 FROM users WHERE email = 'user@example.com'); 
+-- Insert admin user
+INSERT INTO users (email, password, given_name, family_name, permission)
+VALUES ('admin@example.com', 'admin_password', 'Admin', 'User', 'admin');
+
+-- Insert regular user
+INSERT INTO users (email, password, given_name, family_name) 
+VALUES ('user@example.com', 'user_password', 'Test', 'User');

@@ -1,126 +1,264 @@
-import { test, expect, beforeAll, afterAll } from "bun:test";
+import { expect, test, beforeAll, afterAll } from "bun:test";
+import { WebSocket } from "ws";
+import { serve } from "bun";
+import { createWebSocketHandler } from "../websocket.js";
+import { handleHttpRequest, jsonResponse } from "../api.js";
 
-// Centralized WebSocket connection and message tracking
+// Setup environment
+process.env.SQL_DIR = process.env.SQL_DIR || "sql";
+process.env.DATABASE_URL = process.env.DATABASE_URL || "sqlite:./test_derby.sqlite";
+
+// Server setup
+let server;
+const TEST_PORT = 3030;
+let serverUrl = `ws://localhost:${TEST_PORT}`;
 let ws;
-const responses = new Map();
-let connectionMessage;
+let messageQueue = [];
+let connectionMessage = null;
 
-// Use environment variable for port with fallback to 3000
-const PORT = process.env.HTTP_PORT || 3000;
-
+// Start a test server before tests
 beforeAll(() => {
     return new Promise((resolve) => {
-        console.log("Connecting to WebSocket server...");
-        ws = new WebSocket(`ws://localhost:${PORT}`);
+        // Create test server with same configuration as main server
+        server = serve({
+            port: TEST_PORT,
 
-        ws.onopen = () => {
-            console.log("WebSocket connection established");
-            resolve();
-        };
+            async fetch(req, server) {
+                const url = new URL(req.url);
+                const method = req.method;
+                const path = url.pathname;
+                const timestamp = new Date().toISOString();
 
-        ws.onmessage = (event) => {
-            const response = JSON.parse(event.data);
+                console.log(`[TEST] [${timestamp}] ${method} ${path}`);
 
-            if (response.type === "connection") {
-                connectionMessage = response;
-            } else if (response.requestId) {
-                responses.set(response.requestId, response);
-            }
-        };
+                // Upgrade WebSocket connections
+                if (server.upgrade(req)) {
+                    return; // Return if the connection was upgraded
+                }
 
-        ws.onerror = (error) => {
-            console.error("WebSocket error:", error);
-        };
+                // Handle CORS preflight requests
+                if (method === "OPTIONS") {
+                    return new Response(null, {
+                        headers: {
+                            "Access-Control-Allow-Origin": "*",
+                            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                            "Access-Control-Allow-Headers": "Content-Type",
+                        },
+                    });
+                }
+
+                // API route handler
+                if (path.startsWith("/api/")) {
+                    try {
+                        return await handleHttpRequest(req, "/api/");
+                    } catch (error) {
+                        console.error(`[TEST] [${timestamp}] Error:`, error);
+                        return jsonResponse({ error: error.message }, 500);
+                    }
+                }
+
+                // Default route
+                return new Response("Test API Server", {
+                    headers: { "Content-Type": "text/plain" },
+                });
+            },
+
+            error(error) {
+                console.error(`[TEST] Server error: ${error}`);
+            },
+
+            // Integrate WebSocket handler
+            websocket: createWebSocketHandler()
+        });
+
+        console.log(`[TEST] WebSocket test server started on port ${TEST_PORT}`);
+        setTimeout(resolve, 100); // Short delay to ensure server is ready
     });
 });
 
+// Close the server after tests
 afterAll(() => {
     return new Promise((resolve) => {
-        if (ws.readyState === WebSocket.OPEN) {
-            ws.onclose = () => {
-                console.log("WebSocket connection closed");
-                resolve();
-            };
+        if (ws && ws.readyState === WebSocket.OPEN) {
             ws.close();
-        } else {
-            resolve();
         }
+        server.stop();
+        console.log("[TEST] WebSocket test server stopped");
+        setTimeout(resolve, 100); // Give some time for cleanup
     });
 });
 
-test("WebSocket should establish connection", () => {
+// Setup WebSocket connection for tests
+test("WebSocket connection", async () => {
+    ws = new WebSocket(serverUrl);
+
+    await new Promise((resolve) => {
+        ws.on("open", () => {
+            console.log("[TEST] WebSocket connection established");
+        });
+
+        ws.on("message", (data) => {
+            const message = JSON.parse(data.toString());
+            console.log("[TEST] Received:", message);
+
+            // Store the connection message
+            if (message.method === "connection" || message.type === "connection") {
+                connectionMessage = message;
+                resolve();
+            } else {
+                // Store response for later tests
+                messageQueue.push(message);
+            }
+        });
+    });
+
+    // Check connection message
     expect(connectionMessage).toBeDefined();
-    expect(connectionMessage.type).toBe("connection");
-    expect(connectionMessage.message).toContain("Connected to Derby SQL WebSocket API");
+    // Support both old and new formats
+    if (connectionMessage.jsonrpc) {
+        expect(connectionMessage.jsonrpc).toBe("2.0");
+        expect(connectionMessage.method).toBe("connection");
+        expect(connectionMessage.params.message).toBeDefined();
+    } else {
+        expect(connectionMessage.type).toBe("connection");
+        expect(connectionMessage.message).toBeDefined();
+    }
 });
 
-test("WebSocket should retrieve users", async () => {
-    const requestId = sendQuery("get_users");
-
-    // Wait for response
-    const response = await waitForResponse(requestId);
-
-    expect(response.success).toBe(true);
-    expect(Array.isArray(response.data)).toBe(true);
-    expect(response.data.length).toBeGreaterThan(0);
-
-    // Check if first user has expected properties
-    const firstUser = response.data[0];
-    expect(firstUser).toHaveProperty("id");
-    expect(firstUser).toHaveProperty("email");
-});
-
-test("WebSocket should retrieve a profile with parameters", async () => {
-    const requestId = sendQuery("get_profile", { id: 1 });
-
-    // Wait for response
-    const response = await waitForResponse(requestId);
-
-    expect(response.success).toBe(true);
-    expect(Array.isArray(response.data)).toBe(true);
-    expect(response.data.length).toBe(1);
-
-    const profile = response.data[0];
-    expect(profile).toHaveProperty("id", 1);
-    expect(profile).toHaveProperty("email");
-});
-
-test("WebSocket should handle non-existent queries", async () => {
-    const requestId = sendQuery("non_existent_query");
-
-    // Wait for response
-    const response = await waitForResponse(requestId);
-
-    expect(response.success).toBe(false);
-    expect(response.error).toContain("Query not found");
-    expect(response.status).toBe(404);
-});
-
-function sendQuery(queryName, params = {}) {
-    const requestId = `test-${queryName}-${Date.now()}`;
+// Function to send JSON-RPC query
+function sendJsonRpcQuery(queryName, params = {}, id = "test-id") {
     const request = {
-        queryName,
-        params,
-        requestId
+        jsonrpc: "2.0",
+        method: "query",
+        params: {
+            name: queryName,
+            parameters: params
+        },
+        id: id
     };
-
-    console.log(`Sending ${queryName} query with requestId: ${requestId}`);
     ws.send(JSON.stringify(request));
-    return requestId;
 }
 
-// Helper function to wait for a specific response
-async function waitForResponse(requestId, timeout = 2000) {
-    const start = Date.now();
+// Function to send legacy query format
+function sendLegacyQuery(queryName, params = {}, requestId = "test-id") {
+    const request = {
+        queryName: queryName,
+        params: params,
+        requestId: requestId
+    };
+    ws.send(JSON.stringify(request));
+}
 
-    while (Date.now() - start < timeout) {
-        if (responses.has(requestId)) {
-            return responses.get(requestId);
+// Wait for WebSocket response
+function waitForResponse(timeout = 3000) {
+    return new Promise((resolve, reject) => {
+        // Check if we already have a message
+        if (messageQueue.length > 0) {
+            return resolve(messageQueue.shift());
         }
 
-        // Wait a bit
-        await new Promise(resolve => setTimeout(resolve, 50));
-    }
+        // Setup listener for new messages
+        const messageHandler = (data) => {
+            const message = JSON.parse(data.toString());
+            console.log("[TEST] Received in handler:", message);
+            messageQueue.push(message);
+        };
 
-    throw new Error(`Timeout waiting for response to ${requestId}`);
-} 
+        ws.on("message", messageHandler);
+
+        // Setup timeout
+        const timeoutId = setTimeout(() => {
+            ws.removeListener("message", messageHandler);
+            reject(new Error(`Timeout waiting for WebSocket response after ${timeout}ms`));
+        }, timeout);
+
+        // Setup interval to check queue
+        const intervalId = setInterval(() => {
+            if (messageQueue.length > 0) {
+                clearTimeout(timeoutId);
+                clearInterval(intervalId);
+                ws.removeListener("message", messageHandler);
+                resolve(messageQueue.shift());
+            }
+        }, 50);
+    });
+}
+
+// Test JSON-RPC format
+test("WebSocket JSON-RPC: get_users query", async () => {
+    // Send query
+    sendJsonRpcQuery("get_users");
+
+    // Wait for response
+    const response = await waitForResponse();
+
+    // Check response format
+    expect(response.jsonrpc).toBe("2.0");
+    expect(response.id).toBe("test-id");
+    expect(response.result).toBeDefined();
+    expect(Array.isArray(response.result)).toBe(true);
+});
+
+// Test legacy format
+test("WebSocket Legacy: get_users query", async () => {
+    // Send legacy query
+    sendLegacyQuery("get_users");
+
+    // Wait for response
+    const response = await waitForResponse();
+
+    // Check response format (should be converted to JSON-RPC format)
+    expect(response.jsonrpc).toBe("2.0");
+    expect(response.id).toBe("test-id");
+    expect(response.result).toBeDefined();
+    expect(Array.isArray(response.result)).toBe(true);
+});
+
+test("WebSocket: get_profile query with parameters", async () => {
+    // Send query with parameter
+    sendJsonRpcQuery("get_profile", { id: 1 });
+
+    // Wait for response
+    const response = await waitForResponse();
+
+    // Check response format
+    expect(response.jsonrpc).toBe("2.0");
+    expect(response.id).toBe("test-id");
+    expect(response.result).toBeDefined();
+    expect(Array.isArray(response.result)).toBe(true);
+    expect(response.result.length).toBeGreaterThan(0);
+    expect(response.result[0].id).toBe(1);
+});
+
+test("WebSocket: non_existent_query", async () => {
+    // Clear any pending messages
+    messageQueue = [];
+
+    // Send non-existent query
+    sendJsonRpcQuery("non_existent_query");
+
+    // Wait for response
+    const response = await waitForResponse();
+
+    // Check error response format
+    expect(response.jsonrpc).toBe("2.0");
+    expect(response.id).toBe("test-id");
+    expect(response.error).toBeDefined();
+    expect(response.error.code).toBe(-32601); // METHOD_NOT_FOUND
+});
+
+test("WebSocket: invalid JSON-RPC request", async () => {
+    // Clear any pending messages
+    messageQueue = [];
+
+    // Send invalid JSON-RPC request
+    ws.send(JSON.stringify({ invalid: "request" }));
+
+    // Wait for response
+    const response = await waitForResponse();
+
+    // Check error response format
+    expect(response.jsonrpc).toBe("2.0");
+    expect(response.error).toBeDefined();
+    expect(response.error.code).toBe(-32600); // INVALID_REQUEST
+}); 

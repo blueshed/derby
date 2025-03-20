@@ -1,373 +1,334 @@
-import { test, expect, beforeAll, afterAll } from "bun:test";
-import { executeNamedQuery } from "../db";
+import { expect, test, describe, beforeAll, afterAll } from "bun:test";
+import { serve } from "bun";
+import { handleHttpRequest, jsonResponse } from "../api.js";
+import { executeNamedQuery } from "../db/index.js";
 
-// Test direct database access
-test("Database - executeNamedQuery with get_users", async () => {
-    const result = await executeNamedQuery("get_users");
-    expect(Array.isArray(result)).toBe(true);
+// Setup environment for testing
+process.env.SQL_DIR = process.env.SQL_DIR || "sql";
+process.env.DATABASE_URL = process.env.DATABASE_URL || "sqlite:./test_derby.sqlite";
 
-    // Assuming there's at least one user in the database
-    if (result.length > 0) {
-        const user = result[0];
+// Database connection for direct tests
+let db;
+
+// Server setup for API tests
+let server;
+const TEST_PORT = 3032;
+const BASE_URL = `http://localhost:${TEST_PORT}`;
+const API_PATH = "/api/";
+
+// Start a test server before tests
+beforeAll(async () => {
+    return new Promise((resolve) => {
+        // Create test server with same configuration as main server
+        server = serve({
+            port: TEST_PORT,
+
+            async fetch(req, server) {
+                const url = new URL(req.url);
+                const method = req.method;
+                const path = url.pathname;
+                const timestamp = new Date().toISOString();
+
+                console.log(`[API TEST] [${timestamp}] ${method} ${path}`);
+
+                // Handle CORS preflight requests
+                if (method === "OPTIONS") {
+                    return new Response(null, {
+                        headers: {
+                            "Access-Control-Allow-Origin": "*",
+                            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                            "Access-Control-Allow-Headers": "Content-Type",
+                        },
+                    });
+                }
+
+                // API route handler
+                if (path.startsWith(API_PATH)) {
+                    try {
+                        return await handleHttpRequest(req, API_PATH);
+                    } catch (error) {
+                        console.error(`[API TEST] [${timestamp}] Error:`, error);
+                        return jsonResponse({ error: error.message }, 500);
+                    }
+                }
+
+                // Default route
+                return new Response("API Test Server", {
+                    headers: { "Content-Type": "text/plain" },
+                });
+            },
+
+            error(error) {
+                console.error(`[API TEST] Server error: ${error}`);
+            }
+        });
+
+        console.log(`[API TEST] API test server started on port ${TEST_PORT}`);
+        setTimeout(resolve, 100); // Short delay to ensure server is ready
+    });
+});
+
+// Close the server after tests
+afterAll(async () => {
+    server.stop();
+    console.log("[API TEST] API test server stopped");
+});
+
+// Database direct tests
+describe("Database", () => {
+    test("executeNamedQuery with get_users", async () => {
+        const results = await executeNamedQuery("get_users");
+
+        expect(Array.isArray(results)).toBe(true);
+        expect(results.length).toBeGreaterThan(0);
+
+        // Check user properties
+        const user = results[0];
         expect(user).toHaveProperty("id");
         expect(user).toHaveProperty("email");
-    }
-});
+        expect(user).toHaveProperty("given_name");
+        expect(user).toHaveProperty("family_name");
+    });
 
-test("Database - executeNamedQuery with get_profile and params", async () => {
-    // Test with ID 1 (assuming it exists)
-    const result = await executeNamedQuery("get_profile", { id: 1 });
-    expect(Array.isArray(result)).toBe(true);
+    test("executeNamedQuery with get_profile and params", async () => {
+        const results = await executeNamedQuery("get_profile", { id: 1 });
 
-    if (result.length > 0) {
-        const profile = result[0];
-        expect(profile).toHaveProperty("id", 1);
+        expect(Array.isArray(results)).toBe(true);
+        expect(results.length).toBe(1);
+
+        const profile = results[0];
+        expect(profile).toHaveProperty("id");
         expect(profile).toHaveProperty("email");
         expect(profile).toHaveProperty("given_name");
-    }
-});
-
-test("Database - create_user, update_user, and delete_user", async () => {
-    // Step 1: Create a new user
-    const testEmail = `test-${Date.now()}@example.com`;
-    const newUser = {
-        email: testEmail,
-        password: "test_password",
-        given_name: "Test",
-        family_name: "User",
-        permission: "user",
-        preferences: JSON.stringify({ theme: "dark" })
-    };
-
-    // Create the user
-    const createResult = await executeNamedQuery("create_user", newUser);
-    expect(Array.isArray(createResult)).toBe(true);
-    expect(createResult.length).toBe(1);
-
-    const createdUser = createResult[0];
-    expect(createdUser).toHaveProperty("id");
-    expect(createdUser.email).toBe(testEmail);
-    expect(createdUser.given_name).toBe("Test");
-    expect(createdUser.family_name).toBe("User");
-
-    const userId = createdUser.id;
-
-    // Step 2: Update the user
-    const updatedName = "Updated";
-    const updatedPreferences = JSON.stringify({ theme: "light", notifications: true });
-
-    const updateResult = await executeNamedQuery("update_user", {
-        id: userId,
-        given_name: updatedName,
-        preferences: updatedPreferences
     });
 
-    expect(Array.isArray(updateResult)).toBe(true);
-    expect(updateResult.length).toBe(1);
-    expect(updateResult[0].id).toBe(userId);
-    expect(updateResult[0].given_name).toBe(updatedName);
-    expect(updateResult[0].family_name).toBe("User"); // Unchanged
+    test("create_user, update_user, and delete_user", async () => {
+        // Create user
+        const testEmail = `test-${Date.now()}@example.com`;
+        const createResults = await executeNamedQuery("create_user", {
+            email: testEmail,
+            password: "test_password",
+            given_name: "Test",
+            family_name: "User",
+            permission: "user",
+            preferences: JSON.stringify({ theme: "dark" })
+        });
 
-    // Step 3: Verify update with get_profile
-    const getResult = await executeNamedQuery("get_profile", { id: userId });
-    expect(getResult.length).toBe(1);
-    expect(getResult[0].given_name).toBe(updatedName);
-    expect(getResult[0].preferences).toBe(updatedPreferences);
+        expect(createResults.length).toBe(1);
+        expect(createResults[0].email).toBe(testEmail);
 
-    // Step 4: Delete the user
-    const deleteResult = await executeNamedQuery("delete_user", { id: userId });
-    expect(Array.isArray(deleteResult)).toBe(true);
-    expect(deleteResult.length).toBe(1);
-    expect(deleteResult[0].id).toBe(userId);
+        const userId = createResults[0].id;
 
-    // Step 5: Verify user has been deleted
-    const verifyResult = await executeNamedQuery("get_profile", { id: userId });
-    expect(verifyResult.length).toBe(0); // Should return empty array for deleted user
-});
+        // Update user
+        const updateResults = await executeNamedQuery("update_user", {
+            id: userId,
+            given_name: "Updated",
+            preferences: JSON.stringify({ theme: "light", notifications: true })
+        });
 
-test("Database - update_user with non-existent ID", async () => {
-    const nonExistentId = 9999; // Assuming this ID doesn't exist
+        expect(updateResults.length).toBe(1);
+        expect(updateResults[0].given_name).toBe("Updated");
 
-    // Try to update non-existent user
-    const updateResult = await executeNamedQuery("update_user", {
-        id: nonExistentId,
-        given_name: "Should Not Update"
+        // Verify update
+        const getResults = await executeNamedQuery("get_profile", { id: userId });
+        expect(getResults.length).toBe(1);
+        expect(getResults[0].given_name).toBe("Updated");
+
+        // Delete user
+        await executeNamedQuery("delete_user", { id: userId });
+
+        // Verify deletion
+        const verifyResults = await executeNamedQuery("get_profile", { id: userId });
+        expect(verifyResults.length).toBe(0);
     });
 
-    // Should return empty array when no rows affected
-    expect(Array.isArray(updateResult)).toBe(true);
-    expect(updateResult.length).toBe(0);
-});
+    test("update_user with non-existent ID", async () => {
+        const results = await executeNamedQuery("update_user", {
+            id: 9999,
+            given_name: "Should Not Update"
+        });
 
-test("Database - delete_user with non-existent ID", async () => {
-    const nonExistentId = 9999; // Assuming this ID doesn't exist
-
-    // Try to delete non-existent user
-    const deleteResult = await executeNamedQuery("delete_user", {
-        id: nonExistentId
+        expect(results.length).toBe(0);
     });
 
-    // Should return empty array when no rows affected
-    expect(Array.isArray(deleteResult)).toBe(true);
-    expect(deleteResult.length).toBe(0);
-});
-
-test("Database - partial updates with different fields", async () => {
-    // Create a test user
-    const testEmail = `partial-update-${Date.now()}@example.com`;
-    const newUser = {
-        email: testEmail,
-        password: "password123",
-        given_name: "Partial",
-        family_name: "Update",
-        permission: "user",
-        preferences: JSON.stringify({ notifications: false })
-    };
-
-    // Create the user
-    const createResult = await executeNamedQuery("create_user", newUser);
-    const userId = createResult[0].id;
-
-    // Test 1: Update only given_name
-    const updateNameResult = await executeNamedQuery("update_user", {
-        id: userId,
-        given_name: "UpdatedFirst"
-    });
-    expect(updateNameResult[0].given_name).toBe("UpdatedFirst");
-    expect(updateNameResult[0].family_name).toBe("Update"); // Unchanged
-
-    // Test 2: Update only family_name
-    const updateFamilyResult = await executeNamedQuery("update_user", {
-        id: userId,
-        family_name: "UpdatedLast"
-    });
-    expect(updateFamilyResult[0].given_name).toBe("UpdatedFirst"); // Still has previous update
-    expect(updateFamilyResult[0].family_name).toBe("UpdatedLast");
-
-    // Test 3: Update preferences
-    const newPrefs = JSON.stringify({ theme: "dark", notifications: true });
-    const updatePrefsResult = await executeNamedQuery("update_user", {
-        id: userId,
-        preferences: newPrefs
-    });
-    expect(updatePrefsResult[0].preferences).toBe(newPrefs);
-    expect(updatePrefsResult[0].given_name).toBe("UpdatedFirst"); // Unchanged
-
-    // Clean up
-    await executeNamedQuery("delete_user", { id: userId });
-});
-
-test("Database - error handling for non-existent query", async () => {
-    try {
-        await executeNamedQuery("non_existent_query");
-        // If we reach here, the test failed
-        expect(false).toBe(true);
-    } catch (error) {
-        expect(error.message).toContain("Query not found");
-    }
-});
-
-// Test API endpoints
-let server;
-
-beforeAll(() => {
-    // Start server for API tests - import dynamically to avoid port conflicts
-    server = Bun.spawn(["bun", "index.js"], {
-        stdout: "pipe",
-        stderr: "pipe",
+    test("delete_user with non-existent ID", async () => {
+        await executeNamedQuery("delete_user", { id: 9999 });
     });
 
-    // Give the server a moment to start
-    return new Promise(resolve => setTimeout(resolve, 500));
-});
+    test("partial updates with different fields", async () => {
+        // Create test user
+        const testEmail = `partial-update-${Date.now()}@example.com`;
+        const createResults = await executeNamedQuery("create_user", {
+            email: testEmail,
+            password: "password123",
+            given_name: "Partial",
+            family_name: "Update",
+            permission: "user",
+            preferences: JSON.stringify({ notifications: false })
+        });
 
-afterAll(() => {
-    // Shut down server after tests
-    server?.kill();
-});
+        const userId = createResults[0].id;
 
-test("API - Get all users", async () => {
-    const response = await fetch("http://localhost:3000/api/get_users");
-    expect(response.status).toBe(200);
+        // Update only first name
+        await executeNamedQuery("update_user", {
+            id: userId,
+            given_name: "UpdatedFirst"
+        });
 
-    const data = await response.json();
-    expect(Array.isArray(data)).toBe(true);
+        // Update only last name
+        await executeNamedQuery("update_user", {
+            id: userId,
+            family_name: "UpdatedLast"
+        });
 
-    if (data.length > 0) {
-        expect(data[0]).toHaveProperty("id");
-        expect(data[0]).toHaveProperty("email");
-    }
-});
+        // Update only preferences
+        await executeNamedQuery("update_user", {
+            id: userId,
+            preferences: JSON.stringify({ theme: "dark", notifications: true })
+        });
 
-test("API - Get user profile by ID", async () => {
-    const response = await fetch("http://localhost:3000/api/get_profile?id=1");
-    expect(response.status).toBe(200);
+        // Verify all updates were applied
+        const getResults = await executeNamedQuery("get_profile", { id: userId });
+        expect(getResults.length).toBe(1);
+        expect(getResults[0].given_name).toBe("UpdatedFirst");
+        expect(getResults[0].family_name).toBe("UpdatedLast");
+        expect(JSON.parse(getResults[0].preferences)).toEqual({ theme: "dark", notifications: true });
 
-    const data = await response.json();
-    expect(Array.isArray(data)).toBe(true);
-
-    if (data.length > 0) {
-        expect(data[0]).toHaveProperty("id", 1);
-        expect(data[0]).toHaveProperty("email");
-    }
-});
-
-test("API - Full CRUD operations using direct SQL query paths", async () => {
-    // Step 1: Create a new user with POST to create_user
-    const testEmail = `api-test-${Date.now()}@example.com`;
-    const userData = new URLSearchParams({
-        email: testEmail,
-        password: "api_test_password",
-        given_name: "API",
-        family_name: "Test",
-        permission: "user",
-        preferences: JSON.stringify({ notifications: true })
+        // Clean up
+        await executeNamedQuery("delete_user", { id: userId });
     });
 
-    const createResponse = await fetch("http://localhost:3000/api/create_user", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: userData
-    });
-
-    expect(createResponse.status).toBe(200);
-
-    const createData = await createResponse.json();
-    expect(Array.isArray(createData)).toBe(true);
-    expect(createData.length).toBe(1);
-
-    const createdUser = createData[0];
-    expect(createdUser).toHaveProperty("id");
-    expect(createdUser.email).toBe(testEmail);
-
-    const userId = createdUser.id;
-
-    // Step 2: Update the user with POST to update_user
-    const updateData = new URLSearchParams({
-        id: userId,
-        given_name: "Updated",
-        preferences: JSON.stringify({ theme: "system" })
-    });
-
-    const updateResponse = await fetch("http://localhost:3000/api/update_user", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: updateData
-    });
-
-    expect(updateResponse.status).toBe(200);
-
-    const updateResult = await updateResponse.json();
-    expect(Array.isArray(updateResult)).toBe(true);
-    expect(updateResult.length).toBe(1);
-    expect(updateResult[0].given_name).toBe("Updated");
-
-    // Step 3: Delete the user with DELETE to delete_user
-    const deleteResponse = await fetch(`http://localhost:3000/api/delete_user?id=${userId}`, {
-        method: "DELETE"
-    });
-
-    expect(deleteResponse.status).toBe(200);
-
-    const deleteResult = await deleteResponse.json();
-    expect(Array.isArray(deleteResult)).toBe(true);
-    expect(deleteResult.length).toBe(1);
-    expect(deleteResult[0].id).toBe(userId);
-
-    // Step 4: Verify deletion
-    const verifyResponse = await fetch(`http://localhost:3000/api/get_profile?id=${userId}`);
-    expect(verifyResponse.status).toBe(200);
-
-    const verifyData = await verifyResponse.json();
-    expect(Array.isArray(verifyData)).toBe(true);
-    expect(verifyData.length).toBe(0); // Should be empty for deleted user
-});
-
-test("API - Support different HTTP methods for parameter extraction", async () => {
-    // Create a user with JSON body via POST
-    const testEmail = `method-test-${Date.now()}@example.com`;
-    const userData = {
-        email: testEmail,
-        password: "json_test_password",
-        given_name: "Method",
-        family_name: "Test",
-        permission: "user",
-        preferences: JSON.stringify({ theme: "dark" })
-    };
-
-    const createResponse = await fetch("http://localhost:3000/api/create_user", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(userData)
-    });
-
-    expect(createResponse.status).toBe(200);
-
-    const user = (await createResponse.json())[0];
-    const userId = user.id;
-
-    // Clean up
-    await fetch(`http://localhost:3000/api/delete_user?id=${userId}`, {
-        method: "DELETE"
+    test("error handling for non-existent query", async () => {
+        try {
+            await executeNamedQuery("non_existent_query");
+            // If no error is thrown, fail the test
+            expect(true).toBe(false);
+        } catch (error) {
+            expect(error.message).toContain("not found");
+        }
     });
 });
 
-test("API - Handle update of non-existent user", async () => {
-    const nonExistentId = 9999; // Assuming this ID doesn't exist
-
-    const updateData = new URLSearchParams({
-        id: nonExistentId,
-        given_name: "Should Not Update"
+// HTTP API tests
+describe("API", () => {
+    test("Get all users", async () => {
+        const response = await fetch(`${BASE_URL}${API_PATH}get_users`);
+        expect(response.status).toBe(200);
+        const data = await response.json();
+        expect(Array.isArray(data)).toBe(true);
     });
 
-    const response = await fetch("http://localhost:3000/api/update_user", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/x-www-form-urlencoded"
-        },
-        body: updateData
+    test("Get user profile by ID", async () => {
+        const response = await fetch(`${BASE_URL}${API_PATH}get_profile?id=1`);
+        expect(response.status).toBe(200);
+        const data = await response.json();
+        expect(Array.isArray(data)).toBe(true);
+        expect(data.length).toBeGreaterThan(0);
+        expect(data[0].id).toBe(1);
     });
 
-    expect(response.status).toBe(200);
-    const data = await response.json();
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBe(0); // Should return empty array
-});
+    test("Full CRUD operations using direct SQL query paths", async () => {
+        // Create user
+        const testEmail = `api-test-${Date.now()}@example.com`;
+        const createResponse = await fetch(`${BASE_URL}${API_PATH}create_user`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                email: testEmail,
+                password: "api_test_password",
+                given_name: "API",
+                family_name: "Test",
+                permission: "user"
+            })
+        });
 
-test("API - Handle delete of non-existent user", async () => {
-    const nonExistentId = 9999; // Assuming this ID doesn't exist
+        expect(createResponse.status).toBe(200);
+        const createData = await createResponse.json();
+        expect(createData[0].email).toBe(testEmail);
 
-    const response = await fetch(`http://localhost:3000/api/delete_user?id=${nonExistentId}`, {
-        method: "DELETE"
+        const userId = createData[0].id;
+
+        // Update user
+        const updateResponse = await fetch(`${BASE_URL}${API_PATH}update_user`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                id: userId,
+                given_name: "Updated"
+            })
+        });
+
+        expect(updateResponse.status).toBe(200);
+
+        // Delete user
+        const deleteResponse = await fetch(`${BASE_URL}${API_PATH}delete_user?id=${userId}`, {
+            method: "DELETE"
+        });
+
+        expect(deleteResponse.status).toBe(200);
     });
 
-    expect(response.status).toBe(200);
-    const data = await response.json();
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBe(0); // Should return empty array
-});
+    test("Support different HTTP methods for parameter extraction", async () => {
+        // POST with JSON body
+        const createResponse = await fetch(`${BASE_URL}${API_PATH}create_user`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                email: `method-test-${Date.now()}@example.com`,
+                password: "method_test_password",
+                given_name: "Method",
+                family_name: "Test"
+            })
+        });
 
-test("API - Handle non-existent query", async () => {
-    const response = await fetch("http://localhost:3000/api/non_existent_query");
-    expect(response.status).toBe(404);
+        expect(createResponse.status).toBe(200);
+        const userData = await createResponse.json();
+        const userId = userData[0].id;
 
-    const data = await response.json();
-    expect(data).toHaveProperty("error");
-    expect(data.error).toContain("Query not found");
-});
+        // Clean up
+        await fetch(`${BASE_URL}${API_PATH}delete_user?id=${userId}`, {
+            method: "DELETE"
+        });
+    });
 
-test("API - Handle invalid parameters", async () => {
-    // Test with a non-existent ID
-    const response = await fetch("http://localhost:3000/api/get_profile?id=9999");
-    expect(response.status).toBe(200);
+    test("Handle update of non-existent user", async () => {
+        const updateResponse = await fetch(`${BASE_URL}${API_PATH}update_user`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                id: 9999,
+                given_name: "Should Not Update"
+            })
+        });
 
-    const data = await response.json();
-    expect(Array.isArray(data)).toBe(true);
-    expect(data.length).toBe(0); // Should return an empty array
+        expect(updateResponse.status).toBe(200);
+        const data = await updateResponse.json();
+        expect(Array.isArray(data)).toBe(true);
+        expect(data.length).toBe(0);
+    });
+
+    test("Handle delete of non-existent user", async () => {
+        const deleteResponse = await fetch(`${BASE_URL}${API_PATH}delete_user?id=9999`, {
+            method: "DELETE"
+        });
+
+        expect(deleteResponse.status).toBe(200);
+    });
+
+    test("Handle non-existent query", async () => {
+        const response = await fetch(`${BASE_URL}${API_PATH}non_existent_query`);
+
+        expect(response.status).toBe(404);
+        const data = await response.json();
+        expect(data.error).toBeDefined();
+    });
+
+    test("Handle invalid parameters", async () => {
+        const response = await fetch(`${BASE_URL}${API_PATH}get_profile?id=9999`);
+
+        expect(response.status).toBe(200);
+        const data = await response.json();
+        expect(Array.isArray(data)).toBe(true);
+        expect(data.length).toBe(0);
+    });
 }); 

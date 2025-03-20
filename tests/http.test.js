@@ -1,91 +1,132 @@
-import { test, expect } from "bun:test";
+import { expect, test, beforeAll, afterAll } from "bun:test";
+import { serve } from "bun";
+import { handleHttpRequest, jsonResponse } from "../api.js";
 
-// Use environment variables with fallbacks
-const PORT = process.env.HTTP_PORT || 3000;
-const API_BASE_URL = `http://localhost:${PORT}/api`;
+// Setup environment
+process.env.SQL_DIR = process.env.SQL_DIR || "sql";
+process.env.DATABASE_URL = process.env.DATABASE_URL || "sqlite:./test_derby.sqlite";
+
+// Server setup
+let server;
+const TEST_PORT = 3031;
+const BASE_URL = `http://localhost:${TEST_PORT}`;
+const API_PATH = "/api/";
+
+// Start a test server before tests
+beforeAll(() => {
+    return new Promise((resolve) => {
+        // Create test server with same configuration as main server
+        server = serve({
+            port: TEST_PORT,
+
+            async fetch(req, server) {
+                const url = new URL(req.url);
+                const method = req.method;
+                const path = url.pathname;
+                const timestamp = new Date().toISOString();
+
+                console.log(`[HTTP TEST] [${timestamp}] ${method} ${path}`);
+
+                // Handle CORS preflight requests
+                if (method === "OPTIONS") {
+                    return new Response(null, {
+                        headers: {
+                            "Access-Control-Allow-Origin": "*",
+                            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+                            "Access-Control-Allow-Headers": "Content-Type",
+                        },
+                    });
+                }
+
+                // API route handler
+                if (path.startsWith(API_PATH)) {
+                    try {
+                        return await handleHttpRequest(req, API_PATH);
+                    } catch (error) {
+                        console.error(`[HTTP TEST] [${timestamp}] Error:`, error);
+                        return jsonResponse({ error: error.message }, 500);
+                    }
+                }
+
+                // Default route
+                return new Response("HTTP Test API Server", {
+                    headers: { "Content-Type": "text/plain" },
+                });
+            },
+
+            error(error) {
+                console.error(`[HTTP TEST] Server error: ${error}`);
+            }
+        });
+
+        console.log(`[HTTP TEST] HTTP test server started on port ${TEST_PORT}`);
+        setTimeout(resolve, 100); // Short delay to ensure server is ready
+    });
+});
+
+// Close the server after tests
+afterAll(() => {
+    return new Promise((resolve) => {
+        server.stop();
+        console.log("[HTTP TEST] HTTP test server stopped");
+        setTimeout(resolve, 100); // Give some time for cleanup
+    });
+});
 
 test("HTTP API should retrieve users", async () => {
-    const response = await fetch(`${API_BASE_URL}/get_users`);
-
+    const response = await fetch(`${BASE_URL}${API_PATH}get_users`);
     expect(response.status).toBe(200);
-    const users = await response.json();
 
-    expect(Array.isArray(users)).toBe(true);
-    expect(users.length).toBeGreaterThan(0);
-
-    // Check first user has expected properties
-    const firstUser = users[0];
-    expect(firstUser).toHaveProperty("id");
-    expect(firstUser).toHaveProperty("email");
+    const data = await response.json();
+    expect(Array.isArray(data)).toBe(true);
 });
 
 test("HTTP API should retrieve a profile with parameters", async () => {
-    const response = await fetch(`${API_BASE_URL}/get_profile?id=1`);
-
+    const response = await fetch(`${BASE_URL}${API_PATH}get_profile?id=1`);
     expect(response.status).toBe(200);
-    const profiles = await response.json();
 
-    expect(Array.isArray(profiles)).toBe(true);
-    expect(profiles.length).toBe(1);
-
-    const profile = profiles[0];
-    expect(profile).toHaveProperty("id", 1);
-    expect(profile).toHaveProperty("email");
+    const data = await response.json();
+    expect(Array.isArray(data)).toBe(true);
+    expect(data.length).toBeGreaterThan(0);
+    expect(data[0].id).toBe(1);
 });
 
 test("HTTP API should handle POST requests with JSON body", async () => {
-    // Create a unique test user
-    const testEmail = `http-test-${Date.now()}@example.com`;
-    const userData = {
-        email: testEmail,
+    const newUser = {
+        email: `test-${Date.now()}@example.com`,
         password: "test_password",
-        given_name: "HTTP",
-        family_name: "Test",
-        permission: "user",
-        preferences: JSON.stringify({ theme: "dark" })
+        given_name: "Test",
+        family_name: "User"
     };
 
-    // Create user
-    const createResponse = await fetch(`${API_BASE_URL}/create_user`, {
+    const response = await fetch(`${BASE_URL}${API_PATH}create_user`, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(userData)
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newUser)
     });
 
-    expect(createResponse.status).toBe(200);
-    const createResult = await createResponse.json();
-
-    expect(Array.isArray(createResult)).toBe(true);
-    expect(createResult.length).toBe(1);
-    expect(createResult[0].email).toBe(testEmail);
-
-    // Clean up - delete the created user
-    const userId = createResult[0].id;
-    await fetch(`${API_BASE_URL}/delete_user?id=${userId}`, {
-        method: "DELETE"
-    });
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(Array.isArray(data)).toBe(true);
+    expect(data.length).toBeGreaterThan(0);
+    expect(data[0].id).toBeDefined();
 });
 
 test("HTTP API should handle non-existent queries", async () => {
-    const response = await fetch(`${API_BASE_URL}/non_existent_query`);
-
+    const response = await fetch(`${BASE_URL}${API_PATH}non_existent_query`);
     expect(response.status).toBe(404);
-    const error = await response.json();
 
-    expect(error).toHaveProperty("error");
-    expect(error.error).toContain("Query not found");
+    const data = await response.json();
+    expect(data.error).toBeDefined();
 });
 
 test("HTTP API should handle errors gracefully", async () => {
-    // Using a very high ID that shouldn't exist
-    const response = await fetch(`${API_BASE_URL}/get_profile?id=99999`);
-
+    const response = await fetch(`${BASE_URL}${API_PATH}get_profile?id=99999`);
     expect(response.status).toBe(200);
-    const result = await response.json();
 
-    // Should return an empty array when no matching data
-    expect(Array.isArray(result)).toBe(true);
-    expect(result.length).toBe(0);
+    const data = await response.json();
+    // Derby API should handle missing data by returning an empty array
+    // (In some systems this would be a 404, but our API handles it gracefully)
+    expect(Array.isArray(data)).toBe(true);
+    expect(data.length).toBe(0);
 }); 

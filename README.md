@@ -11,7 +11,7 @@ Derby provides a simple way to expose SQL queries as API endpoints. It automatic
 ## Features
 
 - **HTTP API** - Execute SQL queries via HTTP requests
-- **WebSocket API** - Execute SQL queries via WebSocket messages
+- **JSON-RPC WebSocket API** - Execute SQL queries via standardized JSON-RPC 2.0 protocol
 - **Parameter Handling** - Extracts parameters from query string, JSON body, or form data
 - **Modular Design** - Cleanly separated components for database, API, and servers
 - **Environment Configuration** - Configurable database connection, port, and SQL directory
@@ -80,7 +80,7 @@ curl -X POST "http://localhost:3000/api/create_user" \
 curl -X DELETE "http://localhost:3000/api/delete_user?id=123"
 ```
 
-### WebSocket API
+### WebSocket API (JSON-RPC 2.0)
 
 ```javascript
 // Connect to WebSocket server (use the same port as HTTP)
@@ -92,20 +92,61 @@ ws.onmessage = (event) => {
   console.log(response);
 };
 
-// Send a query
+// Send a query using JSON-RPC 2.0
 ws.send(JSON.stringify({
-  queryName: "get_users",
-  params: {},
-  requestId: "request-1"
+  jsonrpc: "2.0",
+  method: "query",
+  params: {
+    name: "get_users",
+    parameters: {}
+  },
+  id: "request-1"
 }));
 
 // Send a query with parameters
 ws.send(JSON.stringify({
-  queryName: "get_profile", 
-  params: { id: 1 },
-  requestId: "request-2"
+  jsonrpc: "2.0",
+  method: "query",
+  params: {
+    name: "get_profile", 
+    parameters: { id: 1 }
+  },
+  id: "request-2"
 }));
 ```
+
+#### JSON-RPC Response Format
+
+Successful response:
+```json
+{
+  "jsonrpc": "2.0",
+  "result": [...], // Query results
+  "id": "request-1"
+}
+```
+
+Error response:
+```json
+{
+  "jsonrpc": "2.0",
+  "error": {
+    "code": -32601, // Standard JSON-RPC error code
+    "message": "Method not found"
+  },
+  "id": "request-1"
+}
+```
+
+### JSON-RPC Error Codes
+
+| Code | Name | Description |
+|------|------|-------------|
+| -32700 | Parse error | Invalid JSON |
+| -32600 | Invalid request | Request does not follow JSON-RPC 2.0 specification |
+| -32601 | Method not found | Requested method/query does not exist |
+| -32602 | Invalid params | Required parameters missing or incorrect |
+| -32603 | Internal error | Server error during execution |
 
 ## Project Structure
 
@@ -116,9 +157,8 @@ derby/
 ├── db/              # Database module
 │   ├── index.js     # Main database interface
 │   └── adapter.js   # Adapter implementation with lifecycle hooks
-├── websocket.js     # WebSocket handler
+├── websocket.js     # WebSocket handler with JSON-RPC implementation
 ├── sql/             # SQL query files (configurable via SQL_DIR)
-│   ├── _init_.sql   # Legacy initialization (still supported)
 │   ├── _0001_create_users.sql   # Migration: Create users table
 │   ├── _0002_create_profiles.sql # Migration: Create profiles table
 │   ├── get_users.sql
@@ -181,6 +221,9 @@ bun run test:ws
 
 # Run DB/file tests only
 bun run test:db
+
+# Run with isolated test database
+bun run test:isolated
 ```
 
 ## License
