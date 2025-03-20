@@ -23,6 +23,7 @@
         "test": "bun test tests/",
         "test:server": "bun test tests/basic-server.test.js",
         "test:sqlite": "bun test tests/sqlite-adapter.test.js",
+        "test:postgres": "bun test tests/postgres-adapter.test.js",
         "example": "bun examples/basic-server.js",
         "example:client": "bun examples/websocket-client.js",
         "lint": "prettier --write src/**/*.js"
