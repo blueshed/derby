@@ -1,12 +1,27 @@
 {
     "name": "derby",
-    "version": "1.0.0",
-    "description": "SQL query API server with HTTP and WebSocket interfaces",
-    "main": "index.js",
+    "version": "0.1.0",
+    "description": "A lightweight web application framework for Bun with SQL-first approach and JSON-RPC over WebSockets",
+    "main": "src/index.js",
     "type": "module",
+    "files": [
+        "src/**/*",
+        "README.md",
+        "LICENSE",
+        "ROADMAP.md"
+    ],
+    "exports": {
+        ".": {
+            "import": "./src/index.js"
+        }
+    },
+    "engines": {
+        "bun": ">=1.0.0"
+    },
     "scripts": {
         "start": "bun --watch index.js",
         "test": "bun test tests/",
+        "test:server": "bun test tests/basic-server.test.js",
         "client": "cd client && bun run dev",
         "test:http": "bun test tests/http.test.js",
         "test:ws": "bun test tests/websocket.test.js",
@@ -19,5 +34,30 @@
     },
     "devDependencies": {
         "bun-types": "latest"
-    }
+    },
+    "keywords": [
+        "bun",
+        "framework",
+        "api",
+        "sql",
+        "websocket",
+        "jsonrpc",
+        "database",
+        "sqlite",
+        "postgres",
+        "server",
+        "http",
+        "backend"
+    ],
+    "author": "Derby Contributors",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/derby/derby"
+    },
+    "bugs": {
+        "url": "https://github.com/derby/derby/issues"
+    },
+    "homepage": "https://github.com/derby/derby",
+    "private": false
 }

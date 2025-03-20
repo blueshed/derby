@@ -1,265 +1,290 @@
-# Derby - SQL Query API Server
+# Derby
 
-A lightweight SQL query execution engine over HTTP and WebSocket interfaces.
-
-## Overview
-
-Derby provides a simple way to expose SQL queries as API endpoints. It automatically maps:
-- URL paths to SQL files (e.g., `/api/get_users` → `sql/get_users.sql`)
-- Request parameters to SQL query parameters
+A lightweight web application framework for Bun with a SQL-first approach and JSON-RPC over WebSockets.
 
 ## Features
 
-- **HTTP API** - Execute SQL queries via HTTP requests
-- **JSON-RPC WebSocket API** - Execute SQL queries via standardized JSON-RPC 2.0 protocol
-- **Parameter Handling** - Extracts parameters from query string, JSON body, or form data
-- **Modular Design** - Cleanly separated components for database, API, and servers
-- **Environment Configuration** - Configurable database connection, port, and SQL directory
-- **Unified Server** - HTTP and WebSocket services run on the same port
-- **Database Adapters** - Support for multiple database types via the same API
-- **Customizable Query Lifecycle** - Hooks for file loading, SQL transformation, and result processing
-- **Automatic Migrations** - File-based migration system with sequential execution
-- **Static File Serving** - Integrated static file server for Single Page Applications (SPAs)
+- **SQL-First Approach**: Define your API by writing SQL queries in `.sql` files
+- **JSON-RPC 2.0 WebSockets**: Standardized communication protocol with proper error handling
+- **HTTP API**: RESTful endpoints for traditional web applications
+- **Static File Serving**: Serve your SPA or static website
+- **Multiple Database Support**: SQLite (built-in) and PostgreSQL (adapter provided)
+- **Simple Configuration**: Environment variables or programmatic configuration
+- **Zero Dependencies**: Built on Bun's native capabilities
 
-## Getting Started
-
-### Prerequisites
-
-- [Bun](https://bun.sh/) runtime
-
-### Installation
+## Installation
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd derby
-
-# Install dependencies
-bun install
+bun add derby
 ```
 
-### Usage
+## Quick Start
 
-```bash
-# Start the server
-bun run start
-
-# Or start with custom configuration
-HTTP_PORT=4000 DATABASE_URL="postgres://user:pass@localhost:5432/derby" SQL_DIR="./queries" STATIC_DIR="./public" bun run start
-```
-
-This starts:
-- Combined HTTP & WebSocket server on the configured port (default: 3000)
-- Serves static files from the configured directory (default: ./client/dist)
-
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DATABASE_URL` | Database connection URL in SQLAlchemy-like format | `sqlite:///./derby.sqlite` |
-| `HTTP_PORT` | Port to run the HTTP and WebSocket server on | `3000` |
-| `SQL_DIR` | Directory containing SQL query and migration files | `sql` |
-| `STATIC_DIR` | Directory containing static files for serving | `./client/dist` |
-
-### Supported Database URLs
-
-- **SQLite**: `sqlite:///./path/to/database.sqlite`
-- **PostgreSQL**: `postgres://username:password@hostname:port/database`
-
-## API Usage
-
-### HTTP API
-
-```bash
-# GET request with parameters
-curl "http://localhost:3000/api/get_profile?id=1"
-
-# POST request with JSON body
-curl -X POST "http://localhost:3000/api/create_user" \
-  -H "Content-Type: application/json" \
-  -d '{"email":"test@example.com","password":"password","given_name":"Test","family_name":"User"}'
-
-# DELETE request
-curl -X DELETE "http://localhost:3000/api/delete_user?id=123"
-```
-
-### WebSocket API (JSON-RPC 2.0)
+### 1. Create a basic server
 
 ```javascript
-// Connect to WebSocket server (use the same port as HTTP)
-const ws = new WebSocket("ws://localhost:3000");
+// server.js
+import derby from 'derby';
 
-// Listen for messages
-ws.onmessage = (event) => {
-  const response = JSON.parse(event.data);
-  console.log(response);
-};
-
-// Send a query using JSON-RPC 2.0
-ws.send(JSON.stringify({
-  jsonrpc: "2.0",
-  method: "query",
-  params: {
-    name: "get_users",
-    parameters: {}
-  },
-  id: "request-1"
-}));
-
-// Send a query with parameters
-ws.send(JSON.stringify({
-  jsonrpc: "2.0",
-  method: "query",
-  params: {
-    name: "get_profile", 
-    parameters: { id: 1 }
-  },
-  id: "request-2"
-}));
+// Create and start the server with default configuration
+const server = await derby();
+server.start();
 ```
 
-#### JSON-RPC Response Format
+### 2. Create SQL queries
 
-Successful response:
-```json
+```sql
+-- sql/get_users.sql
+SELECT id, name, email FROM users
+WHERE name LIKE '%' || :search || '%'
+LIMIT :limit;
+```
+
+### 3. Access via HTTP
+
+```bash
+curl "http://localhost:3000/api/get_users?search=john&limit=10"
+```
+
+### 4. Access via WebSocket (JSON-RPC 2.0)
+
+```javascript
+// client.js
+const ws = new WebSocket('ws://localhost:3000');
+
+ws.onopen = () => {
+  // JSON-RPC 2.0 request
+  ws.send(JSON.stringify({
+    jsonrpc: '2.0',
+    method: 'sql',
+    params: {
+      name: 'get_users',
+      parameters: { search: 'john', limit: 10 }
+    },
+    id: 1
+  }));
+};
+
+ws.onmessage = (event) => {
+  const response = JSON.parse(event.data);
+  console.log(response.result); // Array of users
+};
+```
+
+## Configuration
+
+Derby can be configured using environment variables or by passing a configuration object:
+
+```javascript
+import derby from 'derby';
+
+const server = await derby({
+  port: 8080,
+  database: {
+    type: 'sqlite',
+    connectionString: 'file:myapp.db',
+    sqlPath: './queries',
+    logSql: true
+  },
+  staticDir: './public',
+  apiPath: '/api',
+  cors: {
+    enabled: true,
+    origin: '*'
+  }
+});
+
+server.start();
+```
+
+## Custom WebSocket Methods
+
+You can add custom WebSocket methods to handle specific functionality:
+
+```javascript
+import derby, { createServer } from 'derby';
+
+const server = await createServer({
+  websocket: {
+    methods: {
+      'echo': async (params) => {
+        return params; // Echo back the parameters
+      },
+      'add': async (params) => {
+        const { a, b } = params;
+        if (typeof a !== 'number' || typeof b !== 'number') {
+          throw { code: -32602, message: 'Invalid parameters: numbers required' };
+        }
+        return a + b;
+      }
+    }
+  }
+});
+
+server.start();
+```
+
+## JSON-RPC 2.0 WebSocket API
+
+Derby implements the [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification) over WebSockets:
+
+### Request format
+
+```javascript
 {
   "jsonrpc": "2.0",
-  "result": [...], // Query results
-  "id": "request-1"
+  "method": "sql",
+  "params": {
+    "name": "get_users",
+    "parameters": { "search": "john", "limit": 10 }
+  },
+  "id": 1
 }
 ```
 
-Error response:
-```json
+### Response format
+
+```javascript
+{
+  "jsonrpc": "2.0",
+  "result": [
+    { "id": 1, "name": "John Doe", "email": "john@example.com" },
+    { "id": 2, "name": "Johnny Smith", "email": "johnny@example.com" }
+  ],
+  "id": 1
+}
+```
+
+### Error response
+
+```javascript
 {
   "jsonrpc": "2.0",
   "error": {
-    "code": -32601, // Standard JSON-RPC error code
+    "code": -32601,
     "message": "Method not found"
   },
-  "id": "request-1"
+  "id": 1
 }
 ```
 
-### JSON-RPC Error Codes
+## Error Codes
 
-| Code | Name | Description |
-|------|------|-------------|
-| -32700 | Parse error | Invalid JSON |
-| -32600 | Invalid request | Request does not follow JSON-RPC 2.0 specification |
-| -32601 | Method not found | Requested method/query does not exist |
-| -32602 | Invalid params | Required parameters missing or incorrect |
-| -32603 | Internal error | Server error during execution |
+Derby follows the JSON-RPC 2.0 standard error codes:
 
-## Static File Serving
+| Code | Message | Description |
+|------|---------|-------------|
+| -32700 | Parse error | Invalid JSON was received |
+| -32600 | Invalid Request | The JSON sent is not a valid Request object |
+| -32601 | Method not found | The method does not exist / is not available |
+| -32602 | Invalid params | Invalid method parameter(s) |
+| -32603 | Internal error | Internal JSON-RPC error |
 
-Derby can serve static files from a configurable directory, making it perfect for hosting Single Page Applications (SPAs) alongside your API.
+## Advanced Usage
 
-### Features
+### Database Transactions
 
-- **SPA Support** - Serves `index.html` for client-side routing paths
-- **Directory Traversal Protection** - Prevents access to files outside the static directory
-- **Configurable Root** - Set the static directory with the `STATIC_DIR` environment variable
-- **API Coexistence** - API paths take precedence over static files
+```javascript
+import { createServer } from 'derby';
 
-### Usage with a Vue/React/Angular App
+const server = await createServer();
+const { db } = server;
 
-1. Build your frontend app:
-   ```bash
-   # Example with a Vue app
-   cd client
-   npm run build  # Creates dist/ directory with built files
-   ```
+// Add a custom WebSocket method that uses a transaction
+server.websocketHandler.registerMethod('createUser', async (params) => {
+  return await db.transaction(async () => {
+    // Execute multiple queries in a transaction
+    const user = await db.executeQuery(
+      'INSERT INTO users (name, email) VALUES (:name, :email) RETURNING id',
+      { name: params.name, email: params.email }
+    );
+    
+    await db.executeQuery(
+      'INSERT INTO profiles (user_id, bio) VALUES (:userId, :bio)',
+      { userId: user[0].id, bio: params.bio || '' }
+    );
+    
+    return user[0];
+  });
+});
 
-2. Start Derby server:
-   ```bash
-   # It will serve the client/dist directory by default
-   bun run start
-   ```
-
-3. Access your app at http://localhost:3000
-
-## Project Structure
-
-```
-derby/
-├── index.js         # Combined HTTP/WebSocket server setup
-├── api.js           # Core API handling
-├── db/              # Database module
-│   ├── index.js     # Main database interface
-│   └── adapter.js   # Adapter implementation with lifecycle hooks
-├── websocket.js     # WebSocket handler with JSON-RPC implementation
-├── sql/             # SQL query files (configurable via SQL_DIR)
-│   ├── _0001_create_users.sql   # Migration: Create users table
-│   ├── _0002_create_profiles.sql # Migration: Create profiles table
-│   ├── get_users.sql
-│   ├── get_profile.sql
-│   ├── create_user.sql
-│   ├── update_user.sql
-│   └── delete_user.sql
-├── client/          # Frontend application
-│   ├── src/         # Source code
-│   └── dist/        # Built files (served by default)
-└── tests/           # Test files
-    ├── http.test.js     # HTTP API tests
-    ├── websocket.test.js # WebSocket API tests
-    └── test.test.js     # Database tests
+server.start();
 ```
 
-## Database Migration System
+### Custom Database Adapter
 
-Derby includes an automatic migration system that runs when the server starts:
+```javascript
+import { createServer, createBaseAdapter } from 'derby';
 
-1. **How It Works**:
-   - Any SQL file in the configured SQL directory starting with an underscore (`_`) is considered a migration
-   - Migrations run in alphanumeric order (e.g., `_0001_...` before `_0002_...`)
-   - Each migration runs once and is tracked in a `_migrations` table
-   - Migrations use the same adapter system as regular queries
+// Create a custom database adapter
+function createMyDbAdapter(connectionString) {
+  const baseAdapter = createBaseAdapter();
+  
+  return {
+    ...baseAdapter,
+    
+    async init() {
+      // Initialize your database connection
+      console.log('Custom DB adapter initialized');
+      this.isInitialized = true;
+    },
+    
+    async executeQuery(sql, params) {
+      // Implement query execution logic
+      console.log(`Executing query: ${sql}`);
+      console.log('Parameters:', params);
+      
+      // Return mock data for demonstration
+      return [{ id: 1, name: 'Test User' }];
+    }
+  };
+}
 
-2. **Creating Migrations**:
-   - Name migration files with a prefix for ordering: `_0001_description.sql`
-   - Each migration should be idempotent (safe to run multiple times)
-   - Use `CREATE TABLE IF NOT EXISTS` and similar constructs
-   - Migrations can include schema changes and data seeding
+// Use custom adapter
+const server = await createServer({
+  database: {
+    // Use a factory function that creates your custom adapter
+    adapter: () => createMyDbAdapter('custom://connection')
+  }
+});
 
-3. **Migration Status**:
-   - The system automatically creates a `_migrations` table to track applied migrations
-   - When a migration is applied, its filename is recorded to prevent re-running
-
-4. **Custom SQL Directory**:
-   - Set the `SQL_DIR` environment variable to use a different location for SQL files
-   - All migrations and queries will be loaded from this directory
-
-## Extending the Database Layer
-
-Derby uses a modular database adapter system with customizable hooks:
-
-| Hook | Description | Use Case |
-|------|-------------|----------|
-| `fileResolver` | Loads SQL content from a source | Change SQL storage location |
-| `sqlTransformer` | Modifies SQL before execution | Adapt SQL for different databases |
-| `parameterFormatter` | Formats parameters for the db | Handle different parameter syntaxes |
-| `resultTransformer` | Processes query results | Normalize or enhance results |
-
-## Testing
-
-```bash
-# Run all tests
-bun run test
-
-# Run HTTP API tests only
-bun run test:http
-
-# Run WebSocket API tests only
-bun run test:ws
-
-# Run DB/file tests only
-bun run test:db
-
-# Run with isolated test database
-bun run test:isolated
+server.start();
 ```
 
 ## License
 
-This project is licensed under the MIT License. 
+MIT
+
+## Examples
+
+Derby comes with several examples to help you get started:
+
+### Minimal Example
+
+A self-contained example that demonstrates the basics of Derby including WebSocket JSON-RPC:
+
+```bash
+bun run examples/minimal.js
+```
+
+### Basic Server
+
+A more comprehensive example showing how to configure and run a Derby server:
+
+```bash
+bun run examples/basic-server.js
+```
+
+### WebSocket Client
+
+A standalone WebSocket client for testing JSON-RPC functionality:
+
+```bash
+bun run examples/websocket-client.js
+```
+
+### SQL Examples
+
+SQL query examples are included in `examples/sql/` directory.
+
+You can create your own SQL queries in this directory and they will be automatically loaded by the example server. 
