@@ -1,5 +1,5 @@
 
-            SELECT id, name, email, created_at 
+            SELECT id, username, email, created_at 
             FROM users 
-            ORDER BY name
+            ORDER BY username
         

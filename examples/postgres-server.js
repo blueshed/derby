@@ -145,14 +145,14 @@ async function setupDatabase(server) {
 
         // Create sample SQL queries
         await Bun.write(`${sqlDir}/get_users.sql`, `
-            SELECT id, name, email, created_at 
+            SELECT id, username, email, created_at 
             FROM users 
-            ORDER BY name
+            ORDER BY username
         `);
 
         await Bun.write(`${sqlDir}/get_user_with_notes.sql`, `
             -- Get user details
-            SELECT id, name, email, created_at 
+            SELECT id, username, email, created_at 
             FROM users 
             WHERE id = $user_id;
             
