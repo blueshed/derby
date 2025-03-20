@@ -1,6 +1,6 @@
 {
     "name": "derby",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "description": "A lightweight web application framework for Bun with SQL-first approach and JSON-RPC over WebSockets",
     "main": "src/index.js",
     "type": "module",
