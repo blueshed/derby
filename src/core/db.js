@@ -184,7 +184,7 @@ async function executeMigrations(db, sqlFiles, logSql = false) {
             // Record migration execution - use different SQL based on database type
             if (db.type === 'postgres') {
                 await db.executeQuery(
-                    "INSERT INTO _migrations (name) VALUES ($1)",
+                    "INSERT INTO _migrations (name) VALUES ($name)",
                     { name: migration.name }
                 );
             } else {
