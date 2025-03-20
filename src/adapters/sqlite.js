@@ -90,6 +90,44 @@ export function createSqliteAdapter(connectionString) {
             const { params: transformedParams } = sqliteTransformer(sql, params);
 
             try {
+                // Check if this is a multi-statement query
+                if (sql.includes(';')) {
+                    const statements = sql
+                        .split(';')
+                        .map(s => s.trim())
+                        .filter(s => s.length > 0);
+
+                    if (statements.length > 1) {
+                        console.log("Executing multi-statement SQLite query");
+
+                        let allResults = [];
+                        for (const stmt of statements) {
+                            try {
+                                let result;
+                                if (Object.keys(transformedParams).length > 0) {
+                                    try {
+                                        const prepared = this.db.prepare(stmt);
+                                        result = prepared.all(transformedParams);
+                                    } catch (err) {
+                                        console.warn(`Parameter binding error in statement: ${err.message}`);
+                                        result = this.db.query(stmt).all();
+                                    }
+                                } else {
+                                    result = this.db.query(stmt).all();
+                                }
+
+                                if (result && result.length > 0) {
+                                    allResults = [...allResults, ...result];
+                                }
+                            } catch (err) {
+                                console.error(`Error executing SQLite statement: ${stmt}`, err);
+                                // Continue to next statement rather than failing
+                            }
+                        }
+                        return allResults;
+                    }
+                }
+
                 // Single statement case (the simple path)
                 if (Object.keys(transformedParams).length > 0) {
                     try {
