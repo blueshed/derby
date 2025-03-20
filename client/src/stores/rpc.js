@@ -8,9 +8,9 @@ export function uuidv4() {
     });
 }
 
-const websocket_url = (path = "/websocket") => {
+const websocket_url = (path = "/") => {
     if (import.meta.env.MODE == "development") {
-        return `ws://localhost:8080${path}`;
+        return `ws://localhost:3001${path}`;
     }
     // determine the websocket url.
     const protocol = location.protocol === "https:" ? "wss://" : "ws://";
@@ -125,14 +125,8 @@ class Rpc {
             };
             ws.onmessage = (evt) => {
                 const message = JSON.parse(evt.data);
-                if (message.id) {
-                    const promise = this.promises[message.id];
-                    if (message.error) {
-                        promise.reject(message.error);
-                    } else {
-                        promise.resolve(message.result);
-                    }
-                } else {
+                // Handle connection and broadcast messages (non-JSON-RPC)
+                if (message.action) {
                     if (message.action == "profile") {
                         if (message.cookie_name) {
                             set_cookie(message.cookie_name, message.cookie);
@@ -158,6 +152,27 @@ class Rpc {
                             });
                         }
                     }
+                    return;
+                }
+
+                // Handle JSON-RPC responses
+                if (message.id) {
+                    const promise = this.promises[message.id];
+                    if (!promise) {
+                        console.warn("Received response for unknown request ID:", message.id);
+                        return;
+                    }
+
+                    if (message.error) {
+                        promise.reject(message.error);
+                    } else {
+                        promise.resolve(message.result);
+                    }
+                    // Clean up promise after resolving/rejecting
+                    delete this.promises[message.id];
+                } else {
+                    // Unhandled message type
+                    console.warn("Unhandled message type:", message);
                 }
             };
             this.ws = ws;
@@ -175,11 +190,26 @@ class Rpc {
         }
     }
     on_loaded(func) {
-        if (this.connected) {
-            func();
-        } else {
-            this.notify.push(func);
-        }
+        return new Promise((resolve, reject) => {
+            const wrappedFunc = async () => {
+                try {
+                    // Execute the function and resolve with its result
+                    const result = await func();
+                    resolve(result);
+                } catch (error) {
+                    // Reject the promise if the function throws an error
+                    reject(error);
+                }
+            };
+
+            // If already connected, execute the function immediately
+            if (this.connected) {
+                wrappedFunc();
+            } else {
+                // Otherwise, add it to the notification queue
+                this.notify.push(wrappedFunc);
+            }
+        });
     }
 }
 
@@ -189,7 +219,7 @@ export const useRpc = () => {
     return inject(RPC_KEY);
 };
 
-export const createRpc = (state = null, url = "/ws") => {
+export const createRpc = (state = null, url = "/") => {
     const rpc = (window.rpc = new Rpc(state, url));
     return {
         install(app, options) {

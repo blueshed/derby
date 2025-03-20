@@ -5,12 +5,14 @@
     "main": "index.js",
     "type": "module",
     "scripts": {
-        "start": "bun run index.js",
+        "start": "bun --watch index.js",
         "test": "bun test tests/",
+        "client": "cd client && bun run dev",
         "test:http": "bun test tests/http.test.js",
         "test:ws": "bun test tests/websocket.test.js",
         "test:db": "bun test tests/test.test.js",
-        "test:isolated": "DATABASE_URL=sqlite:///./test_derby.sqlite SQL_DIR=sql bun test tests/"
+        "test:isolated": "DATABASE_URL=sqlite:///./test_derby.sqlite SQL_DIR=sql bun test tests/",
+        "test-jsonrpc": "bun run test-jsonrpc.js"
     },
     "dependencies": {
         "bun": "^1.0.0"

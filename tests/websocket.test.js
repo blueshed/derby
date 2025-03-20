@@ -101,8 +101,8 @@ test("WebSocket connection", async () => {
             const message = JSON.parse(data.toString());
             console.log("[TEST] Received:", message);
 
-            // Store the connection message
-            if (message.method === "connection" || message.type === "connection") {
+            // Store the connection message - supports both formats
+            if (message.action === "connection" || message.method === "connection") {
                 connectionMessage = message;
                 resolve();
             } else {
@@ -118,10 +118,10 @@ test("WebSocket connection", async () => {
     if (connectionMessage.jsonrpc) {
         expect(connectionMessage.jsonrpc).toBe("2.0");
         expect(connectionMessage.method).toBe("connection");
-        expect(connectionMessage.params.message).toBeDefined();
+        expect(connectionMessage.params.args).toBeDefined();
     } else {
-        expect(connectionMessage.type).toBe("connection");
-        expect(connectionMessage.message).toBeDefined();
+        expect(connectionMessage.action).toBe("connection");
+        expect(connectionMessage.args).toBeDefined();
     }
 });
 
@@ -228,6 +228,28 @@ test("WebSocket: get_profile query with parameters", async () => {
     expect(Array.isArray(response.result)).toBe(true);
     expect(response.result.length).toBeGreaterThan(0);
     expect(response.result[0].id).toBe(1);
+});
+
+test("WebSocket: direct method call", async () => {
+    // Clear any pending messages
+    messageQueue = [];
+
+    // Send direct method call instead of using query method
+    ws.send(JSON.stringify({
+        jsonrpc: "2.0",
+        method: "get_users",
+        params: {},
+        id: "direct-call"
+    }));
+
+    // Wait for response
+    const response = await waitForResponse();
+
+    // Check response format
+    expect(response.jsonrpc).toBe("2.0");
+    expect(response.id).toBe("direct-call");
+    expect(response.result).toBeDefined();
+    expect(Array.isArray(response.result)).toBe(true);
 });
 
 test("WebSocket: non_existent_query", async () => {

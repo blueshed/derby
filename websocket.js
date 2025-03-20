@@ -16,16 +16,16 @@ export function createWebSocketHandler() {
     return {
         open(ws) {
             console.log("WebSocket connection opened");
-            // Send a welcome message
+            // Send a welcome message - using action for client compatibility
             ws.send(JSON.stringify({
-                jsonrpc: "2.0",
-                method: "connection",
-                params: {
+                action: "connection",
+                args: {
                     message: "Connected to Derby SQL JSON-RPC API",
                     timestamp: new Date().toISOString()
                 }
             }));
         },
+
         async message(ws, message) {
             let request;
             let id = null;
@@ -94,9 +94,11 @@ export function createWebSocketHandler() {
                 sendError(ws, INTERNAL_ERROR, error.message, id);
             }
         },
+
         close(ws, code, message) {
             console.log(`WebSocket connection closed: ${code}`, message);
         },
+
         drain(ws) {
             console.log("WebSocket backpressure drained");
         }
@@ -138,6 +140,20 @@ async function handleQuery(ws, request) {
     } catch (error) {
         sendError(ws, INTERNAL_ERROR, error.message, id);
     }
+}
+
+/**
+ * Send a broadcast message to all subscribed clients
+ * @param {WebSocket} ws - WebSocket connection 
+ * @param {string} action - Action name
+ * @param {Object} data - Data to broadcast
+ */
+function broadcast(ws, action, data) {
+    ws.send(JSON.stringify({
+        action,
+        args: data,
+        timestamp: new Date().toISOString()
+    }));
 }
 
 /**

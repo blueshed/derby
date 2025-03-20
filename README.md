@@ -19,6 +19,7 @@ Derby provides a simple way to expose SQL queries as API endpoints. It automatic
 - **Database Adapters** - Support for multiple database types via the same API
 - **Customizable Query Lifecycle** - Hooks for file loading, SQL transformation, and result processing
 - **Automatic Migrations** - File-based migration system with sequential execution
+- **Static File Serving** - Integrated static file server for Single Page Applications (SPAs)
 
 ## Getting Started
 
@@ -44,11 +45,12 @@ bun install
 bun run start
 
 # Or start with custom configuration
-HTTP_PORT=4000 DATABASE_URL="postgres://user:pass@localhost:5432/derby" SQL_DIR="./queries" bun run start
+HTTP_PORT=4000 DATABASE_URL="postgres://user:pass@localhost:5432/derby" SQL_DIR="./queries" STATIC_DIR="./public" bun run start
 ```
 
 This starts:
 - Combined HTTP & WebSocket server on the configured port (default: 3000)
+- Serves static files from the configured directory (default: ./client/dist)
 
 ### Environment Variables
 
@@ -57,6 +59,7 @@ This starts:
 | `DATABASE_URL` | Database connection URL in SQLAlchemy-like format | `sqlite:///./derby.sqlite` |
 | `HTTP_PORT` | Port to run the HTTP and WebSocket server on | `3000` |
 | `SQL_DIR` | Directory containing SQL query and migration files | `sql` |
+| `STATIC_DIR` | Directory containing static files for serving | `./client/dist` |
 
 ### Supported Database URLs
 
@@ -148,6 +151,34 @@ Error response:
 | -32602 | Invalid params | Required parameters missing or incorrect |
 | -32603 | Internal error | Server error during execution |
 
+## Static File Serving
+
+Derby can serve static files from a configurable directory, making it perfect for hosting Single Page Applications (SPAs) alongside your API.
+
+### Features
+
+- **SPA Support** - Serves `index.html` for client-side routing paths
+- **Directory Traversal Protection** - Prevents access to files outside the static directory
+- **Configurable Root** - Set the static directory with the `STATIC_DIR` environment variable
+- **API Coexistence** - API paths take precedence over static files
+
+### Usage with a Vue/React/Angular App
+
+1. Build your frontend app:
+   ```bash
+   # Example with a Vue app
+   cd client
+   npm run build  # Creates dist/ directory with built files
+   ```
+
+2. Start Derby server:
+   ```bash
+   # It will serve the client/dist directory by default
+   bun run start
+   ```
+
+3. Access your app at http://localhost:3000
+
 ## Project Structure
 
 ```
@@ -166,6 +197,9 @@ derby/
 │   ├── create_user.sql
 │   ├── update_user.sql
 │   └── delete_user.sql
+├── client/          # Frontend application
+│   ├── src/         # Source code
+│   └── dist/        # Built files (served by default)
 └── tests/           # Test files
     ├── http.test.js     # HTTP API tests
     ├── websocket.test.js # WebSocket API tests
